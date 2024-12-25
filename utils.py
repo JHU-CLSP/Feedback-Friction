@@ -1,6 +1,13 @@
 import re
 import string
+import random
+import datasets
+import asyncio
+import aiohttp
+import numpy as np
 
+
+gsm8k_list_of_end_prompts = ['the answer is', 'The correct answer is', 'The answer is', 'The answer is indeed', 'the correct answer is indeed']
 
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
@@ -288,3 +295,255 @@ def extract_and_convert_number_real(text):
     string = fix_a_slash_b(string)
 
     return string
+
+
+def get_url(base_url, ports):
+    return random.choice(base_url) + ':' + str(random.choice(ports)) + '/v1/chat/completions'
+
+def setup_datalist(dataset_name, mode="test"):
+    if dataset_name == "arc":
+        ds = datasets.load_dataset("allenai/ai2_arc", 'ARC-Challenge')
+        data_list = list(ds['test'])
+        global arc_datalist
+        arc_datalist = list(ds['train'])
+        if mode == "test":
+            return data_list
+        elif mode == "train":
+            return arc_datalist
+    elif dataset_name == "gsm8k":
+        ds = datasets.load_dataset("gsm8k", 'main')
+        data_list = list(ds['test'])
+        global gsm8k_datalist
+        gsm8k_datalist = list(ds['train'])
+        if mode == "test":
+            return data_list
+        elif mode == "train":
+            return gsm8k_datalist
+    elif dataset_name == "math":
+        ds = datasets.load_dataset("lighteval/MATH", 'all')
+        data_list = list(ds['test'])
+        global math_datalist
+        math_datalist = list(ds['train'])
+        # s = "/scratch/dkhasha1/djiang21/new_project/model_training/finetuning_data/math_train_easy.jsonl"
+        # math_datalist = []
+        # for line in open(s, 'r'):
+        #     t = json.loads(line)
+        #     if "\\boxed" in t['solution']:
+        #         math_datalist.append(t)
+        # return math_datalist
+        if mode == "test":
+            return data_list
+        elif mode == "train":
+            return math_datalist
+    elif dataset_name == "trivia_qa":
+        ds = datasets.load_dataset("mandarjoshi/trivia_qa", 'rc.nocontext')
+        data_list = list(ds['validation'])
+        global triviaqa_datalist
+        triviaqa_datalist = list(ds['train'])
+        if mode == "test":
+            return data_list
+        elif mode == "train":
+            return triviaqa_datalist
+        
+
+def get_previous(dataset_name, data):
+    if dataset_name == "arc":
+        # previous = "Question: " + data['question'] + '\nChoices: '
+        # for i in range(len(data['choices']['text'])):
+        #     previous += chr(ord('A') + i) + " - " + data['choices']['text'][i] + " "
+        # previous = previous[:-1] + '\nAnswer:'
+        previous = data['question'] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
+        return previous
+    elif dataset_name == "gsm8k":
+        previous = "Question: " + data['question'] + '\nAnswer: '
+        return previous
+    elif dataset_name == "math":
+        # return "Question: " + data['problem'] + "\nAnswer:"
+        return data['problem'] + "\nAnswer:"
+    elif dataset_name == "trivia_qa":
+        return data['question']
+
+
+def get_messages(dataset_name):
+    if dataset_name == "gsm8k":
+        messages_gsm8k = []
+        rand_list_from_train = np.random.choice(gsm8k_datalist, 9, replace=False)
+        for data in rand_list_from_train:
+            l = []
+            d = {"role": "user", "content": "Question: " + data['question'] + "\nAnswer:"}
+            l.append(d)
+            data['answer'] = data['answer'].replace("####", "The answer is:")
+            answers = data['answer'].split("\n")
+            # for answer in answers:
+            #     if answer == "":
+            #         continue
+            #     if not answer.endswith("."):
+            #         answer = answer + "."
+            #     l.append({"role": "assistant", "content": answer})
+            l.append({"role": "assistant", "content": data['answer']})
+            messages_gsm8k.extend(l)
+        return messages_gsm8k
+    elif dataset_name == "math":
+        messages_math = [{"role": "system", "content": "You are a smart assistant that solves math problems. If you think you're ready to output the answer, you can wrap your answer with \\boxed{}. Please follow this format metrically"}]
+        rand_list_from_train = np.random.choice(math_datalist, 5, replace=False)
+        for data in rand_list_from_train:
+            l = []
+            d = {"role": "user", "content": "Question: " + data['problem'] + "\nAnswer:"}
+            l.append(d)
+            # answers = data['solution'].split(". ")
+            # for answer in answers:
+            #     if answer == "":
+            #         continue
+            #     l.append({"role": "assistant", "content": answer})
+            l.append({"role": "assistant", "content": data['solution']})
+            messages_math.extend(l)
+        return messages_math
+    elif dataset_name == "arc":
+        messages_arc = [{"role": "system", "content": "You are a smart assistant that solves reasoning problems. If you think you're ready to output the answer, you can just output an answer in A, B, C or D. Please just output one character and follow this format metrically"}]
+        rand_list_from_train = np.random.choice(arc_datalist, 8, replace=False)
+        for data in rand_list_from_train:
+            l = []
+            d = {"role": "user", "content": data['question'] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])}
+            l.append(d)
+            l.append({"role": "assistant", "content": data['answerKey']})
+            messages_arc.extend(l)
+        return messages_arc
+    elif dataset_name == "trivia_qa":
+        messages_triviaqa = [{"role": "system", "content": "You are a smart assistant that solves trivia questions. If you think you're ready to output the answer, you can just output an answer."}]
+        rand_list_from_train = np.random.choice(triviaqa_datalist, 8, replace=False)
+        for data in rand_list_from_train:
+            l = []
+            d = {"role": "user", "content": data['question']}
+            l.append(d)
+            l.append({"role": "assistant", "content": data['answer']["normalized_aliases"][0]})
+            messages_triviaqa.extend(l)
+        return messages_triviaqa
+
+
+def get_normalized_answer(dataset_name, data):
+    if dataset_name == "arc" or dataset_name == "ecqa":
+        return data['answerKey']
+    elif dataset_name == "gsm8k":
+        return extract_and_convert_number_real(data['answer'].split("####")[1].strip())
+    elif dataset_name == "math":
+        solution = data['solution']
+        res = remove_boxed(last_boxed_only_string(solution))
+        try:
+            res = strip_string(res)
+        except:
+            pass
+        return res
+    elif dataset_name == "trivia_qa":
+        return data['answer']["normalized_value"]
+
+
+def get_dataset_key(dataset_name):
+    if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "gsm8k" or dataset_name == "mmlu_pro":
+        return "question"
+    elif dataset_name == "math":
+        return "problem"
+    elif dataset_name == "proofwriter":
+        return "context"
+    elif dataset_name == "trivia_qa":
+        return "question"
+
+
+def get_normalized_prediction(dataset_name, prediction):
+    if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "proofwriter":
+        normalized_prediction = prediction.strip().replace(": ", "")
+        return normalized_prediction
+    elif dataset_name == "gsm8k":
+        return extract_and_convert_number_real(prediction)
+    elif dataset_name == "math":
+        res = remove_boxed(last_boxed_only_string(prediction))
+        try:
+            res = strip_string(res)
+        except:
+            pass
+        return res
+    elif dataset_name == "trivia_qa":
+        return normalize_answer(prediction)
+        
+        
+async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports):
+    url = get_url(base_url, ports)
+    content = {
+        "model": agent_model,
+        "messages": new_messages,
+        "max_tokens": 1000,
+        "temperature": temperature,
+        "stop_token_ids": [128001, 128009],
+        "best_of": n,
+        "n": n,
+        "logprobs": 1,
+        "seed": 14,
+        "chat_template": tokenizer.chat_template
+    }
+    headers = {
+        "Content-Type": "application/json"
+    }
+    session_timeout = aiohttp.ClientTimeout(total=60000,sock_connect=6000,sock_read=6000)
+
+    async with aiohttp.ClientSession(timeout=session_timeout) as session:
+        async with session.post(url, headers=headers, json=content) as agent_response:
+            try:
+                agent_response.raise_for_status()
+                agent_response = await agent_response.json()
+            except Exception as e:
+                print(e)
+                print("Error in calling remote agent server")
+    return agent_response
+                
+
+def extract_predictions(dataset, response_list):
+    normalized_prediction_list = []
+    if dataset == "gsm8k":
+        for term in gsm8k_list_of_end_prompts:
+            try:
+                for response in response_list:
+                    if term in response:
+                        prediction = response.split(term)[1].replace('\n', ' ').strip()
+                        normalized_prediction = get_normalized_prediction(dataset, prediction)
+                        if normalized_prediction == "":
+                            pass
+                        else:
+                            normalized_prediction_list.append(normalized_prediction)
+                            break
+                if len(normalized_prediction_list) != 0:
+                    break
+            except:
+                print("Error")
+    elif dataset == "math":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "arc":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = prediction
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "trivia_qa":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    return normalized_prediction_list
+
+
+def generate_question(dataset, data):
+    if dataset == "arc":
+        question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
+    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k":
+        question = data[get_dataset_key(dataset)]
+    return question
+
