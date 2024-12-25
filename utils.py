@@ -446,6 +446,15 @@ def get_dataset_key(dataset_name):
         return "context"
     elif dataset_name == "trivia_qa":
         return "question"
+    
+
+def get_process_answer(dataset_name, data):
+    if dataset_name == "gsm8k":
+        return data['answer']
+    elif dataset_name == "math":
+        return data["solution"]
+    elif dataset_name == "trivia_qa":
+        return data['answer']["normalized_value"]
 
 
 def get_normalized_prediction(dataset_name, prediction):
