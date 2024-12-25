@@ -12,8 +12,13 @@ import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
 from utils import setup_datalist, get_previous, get_messages, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, extract_predictions, generate_question, get_process_answer
+from database import RedisCache
 
-base_url = ['http://c003']
+
+
+# Connect to your local Redis
+cache = RedisCache(host='localhost', port=6379)
+base_url = ['http://c002']
 ports = [1233, 1234, 1235, 1236]
 gsm8k_datalist = None
 math_datalist = None
@@ -33,17 +38,10 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         "content": previous
     })
     
-    agent_response = await call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports)
+    agent_response = await call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache)
 
     response_list = []
-    try:
-        for output in agent_response['choices']:
-            response = output['message']['content']
-            response_list.append(response)
-    except:
-        response = ""
-        response_list.append(response)
-
+    response_list.append(agent_response)
     normalized_prediction_list = extract_predictions(dataset, response_list)
     
     feedback = ""
@@ -52,14 +50,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
             # feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
             # also provide ground-truth answer trajectory
             feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
-            agent_response = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports)
-            try:
-                for output in agent_response['choices']:
-                    response = output['message']['content']
-                    feedback = response
-            except:
-                feedback = ""
-    
+            feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache)
     d = {
         "question": generate_question(dataset, data),
         "normalized_answer": get_normalized_answer(dataset, data),

@@ -5,6 +5,8 @@ import datasets
 import asyncio
 import aiohttp
 import numpy as np
+import json
+from datetime import datetime
 
 
 gsm8k_list_of_end_prompts = ['the answer is', 'The correct answer is', 'The answer is', 'The answer is indeed', 'the correct answer is indeed']
@@ -472,9 +474,28 @@ def get_normalized_prediction(dataset_name, prediction):
         return res
     elif dataset_name == "trivia_qa":
         return normalize_answer(prediction)
+    
+
+def flatten_list(new_messages):
+    messages = []
+    for message in new_messages:
+        messages.append(message["role"] + ": " + message["content"])
+    return "\n".join(messages)
         
-        
-async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports):
+
+async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache):
+    if n != 1:
+        raise ValueError("n must be 1")
+    res = list(cache.search(
+        prompt=flatten_list(new_messages),
+        model=agent_model,
+        temperature=temperature
+    ))
+    if len(res) > 0 and len(res) == 1:
+        print("Cache hit")
+        return res[0]['response']
+    elif len(res) > 0 and len(res) > 1:
+        raise ValueError("Multiple results found")
     url = get_url(base_url, ports)
     content = {
         "model": agent_model,
@@ -501,6 +522,19 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
             except Exception as e:
                 print(e)
                 print("Error in calling remote agent server")
+    
+    try:
+        agent_response = agent_response['choices'][0]['message']['content']
+    except:
+        agent_response = ""
+    # Store responses
+    cache.store(
+        prompt=flatten_list(new_messages),
+        response=agent_response,
+        model=agent_model,
+        temperature=temperature
+    )
+    
     return agent_response
                 
 
