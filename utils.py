@@ -483,19 +483,19 @@ def flatten_list(new_messages):
     return "\n".join(messages)
         
 
-async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache):
+async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None):
     if n != 1:
         raise ValueError("n must be 1")
-    res = list(cache.search(
-        prompt=flatten_list(new_messages),
-        model=agent_model,
-        temperature=temperature
-    ))
-    if len(res) > 0 and len(res) == 1:
-        print("Cache hit")
-        return res[0]['response']
-    elif len(res) > 0 and len(res) > 1:
-        raise ValueError("Multiple results found")
+    # res = list(cache.search(
+    #     prompt=flatten_list(new_messages),
+    #     model=agent_model,
+    #     temperature=temperature
+    # ))
+    # if len(res) > 0 and len(res) == 1:
+    #     print("Cache hit")
+    #     return res[0]['response']
+    # elif len(res) > 0 and len(res) > 1:
+    #     raise ValueError("Multiple results found")
     url = get_url(base_url, ports)
     content = {
         "model": agent_model,
@@ -528,11 +528,16 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     except:
         agent_response = ""
     # Store responses
+    if type is None or dataset is None or round is None:
+        raise ValueError("Type or dataset is None")
     cache.store(
         prompt=flatten_list(new_messages),
         response=agent_response,
         model=agent_model,
-        temperature=temperature
+        temperature=temperature,
+        type=type,
+        dataset=dataset,
+        round=round
     )
     
     return agent_response

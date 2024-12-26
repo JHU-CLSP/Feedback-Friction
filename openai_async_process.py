@@ -15,7 +15,6 @@ from utils import setup_datalist, get_previous, get_messages, get_normalized_ans
 from database import RedisCache
 
 
-
 # Connect to your local Redis
 cache = RedisCache(host='localhost', port=6379)
 base_url = ['http://c002']
@@ -27,7 +26,7 @@ use_feedback = False
 np.random.seed(14)
 
 
-async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokenizer=None, temperature=0.0, n=1):
+async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokenizer=None, temperature=0.0, n=1, round=0):
     previous = get_previous(dataset, data)
     prediction_list, response_list = [], []
     normalized_answer_list, normalized_prediction_list = [], []
@@ -38,7 +37,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         "content": previous
     })
     
-    agent_response = await call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache)
+    agent_response = await call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type="answer", dataset=dataset, round=round)
 
     response_list = []
     response_list.append(agent_response)
@@ -50,7 +49,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
             # feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
             # also provide ground-truth answer trajectory
             feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
-            feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache)
+            feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
     d = {
         "question": generate_question(dataset, data),
         "normalized_answer": get_normalized_answer(dataset, data),
@@ -69,7 +68,7 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
         if loop.is_closed():
             asyncio.set_event_loop(asyncio.new_event_loop())
             loop = asyncio.get_event_loop()
-        tasks = [loop.create_task(get_response(data, pbar, agent_model, dataset, tokenizer, temperature, n)) for data in data_list]
+        tasks = [loop.create_task(get_response(data, pbar, agent_model, dataset, tokenizer, temperature, n, i)) for data in data_list]
         result = loop.run_until_complete(asyncio.gather(*tasks))
         data_list_temp = []
         for j in range(len(data_list)):
@@ -79,9 +78,9 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
             else:
                 temp = data_list[j]
                 if use_feedback:
-                    temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect.\n" + "Here is some feedback: " + item["feedback"] + "\nAnswer the question again."
+                    temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect.\n" + "Here is some feedback: " + item["feedback"] + "\nAnswer the question again.\n"
                 else:
-                    temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect. Answer the question again."
+                    temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect. Answer the question again.\n"
                 data_list_temp.append(temp)
         data_list = data_list_temp
         leftover_problems = data_list

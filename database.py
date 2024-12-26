@@ -192,26 +192,45 @@ class RedisCache:
         # Sort by descending timestamp
         return sorted(results, key=lambda x: x['timestamp'], reverse=True)
 
-    def export(self, filepath="cache_export.json"):
-        """Export all data to JSON file"""
+
+    def export(self, filepath="cache_export.json", model=None, dataset=None, type=None):
+        """
+        Export data to a JSON file. Optionally filter by model
+        and sort by descending timestamp.
+        """
         data = []
-        for key in self.redis.keys("llm:*"):
+
+        # If a model is provided, get only keys for that model.
+        # Otherwise, get all llm:* keys.
+        if model:
+            all_keys = self.redis.smembers(f"idx:model:{model}")
+        else:
+            all_keys = self.redis.keys("llm:*")
+
+        for key in all_keys:
             entry = self.redis.hgetall(key)
             if entry:
-                data.append(entry)
-        
+                # You could also check if entry['model'] == model if you want
+                # a secondary verification. But if you're using idx:model:{model}
+                # set membership, that's probably enough.
+                if 'dataset' in entry and entry['dataset'] == dataset and 'type' in entry and entry['type'] == type:
+                    data.append(entry)
+
+        # Sort by timestamp, descending
+        # We'll handle the case if 'timestamp' doesn't exist by providing a fallback.
+        data.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
         return filepath
+
 
     def clear(self):
         """Clear all data"""
         self.redis.flushdb()
 
-# Example usage
-if __name__ == "__main__":
-    cache = RedisCache()
-    
+
+def one_process(cache):
     # Attempt to create a new record
     cache.create(
         prompt="What's the weather?",
@@ -245,3 +264,12 @@ if __name__ == "__main__":
     print(f"Results for exact-match search: {len(results)}")
     for r in results:
         print(r)
+
+
+# Example usage
+if __name__ == "__main__":
+    cache = RedisCache()
+    # one_process(cache)
+    # cache.export("cache_export.json", model='meta-llama/Llama-3.1-70B-Instruct', dataset='gsm8k')
+    cache.export("cache_export.json", model='meta-llama/Llama-3.1-70B-Instruct', dataset='gsm8k', type="feedback")
+    
