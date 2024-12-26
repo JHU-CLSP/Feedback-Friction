@@ -2,6 +2,8 @@ import redis
 import json
 from datetime import datetime
 import hashlib
+from argparse import ArgumentParser
+
 
 class RedisCache:
     def __init__(self, host='localhost', port=6379, db=0):
@@ -271,5 +273,10 @@ if __name__ == "__main__":
     cache = RedisCache()
     # one_process(cache)
     # cache.export("cache_export.json", model='meta-llama/Llama-3.1-70B-Instruct', dataset='gsm8k')
-    cache.export("cache_export.json", model='meta-llama/Llama-3.1-70B-Instruct', dataset='gsm8k', type="feedback")
+    parser = ArgumentParser()
+    parser.add_argument("--dataset", type=str, default="gsm8k", help="dataset to test with")
+    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.1-70B-Instruct", help="Agent model to use for generating responses")
+    parser.add_argument("--type", type=str, default="feedback", help="Type of data to export")
+    dataset, model, type = parser.parse_args().dataset, parser.parse_args().model, parser.parse_args().type
+    cache.export("cache_export.json", model=model, dataset=dataset, type=type)
     
