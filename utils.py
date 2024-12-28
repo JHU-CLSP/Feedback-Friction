@@ -540,8 +540,18 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
         round=round
     )
     
-    return agent_response
-                
+    return agent_response   
+
+def mask_answer_in_string(input_string, ground_truth):
+    ground_truth_str = str(ground_truth)
+    masked_string = re.sub(rf'\b{ground_truth_str}\b', '<answer masked>', input_string)
+    return masked_string
+
+def check_if_ground_truth_exists(input_string, ground_truth):
+    # return True if ground truth exists
+    ground_truth_str = str(ground_truth)
+    match = re.search(rf'\b{ground_truth_str}\b', input_string)
+    return match is not None
 
 def extract_predictions(dataset, response_list):
     normalized_prediction_list = []
