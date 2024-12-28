@@ -16,7 +16,7 @@ from database import RedisCache
 
 
 # Connect to your local Redis
-cache = RedisCache(host='localhost', port=6379)
+cache = RedisCache(host='localhost', port=6379, db=0) # try other db=1 on 6379 use 0 for default
 base_url = ['http://c002']
 ports = [1233, 1234, 1235, 1236]
 gsm8k_datalist = None
@@ -27,14 +27,17 @@ np.random.seed(14)
 
 
 async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokenizer=None, temperature=0.0, n=1, round=0):
-    previous = get_previous(dataset, data)
+    previous = get_previous(dataset, data) # extract and reformat question
     prediction_list, response_list = [], []
     normalized_answer_list, normalized_prediction_list = [], []
     
-    new_messages = get_messages(dataset).copy()
+    if dataset != "mmlu_pro":
+        new_messages = get_messages(dataset).copy()
+    else:
+        new_messages = get_messages(dataset, data['category']).copy() # now we have the desired category 
     new_messages.append({
         "role": "user",
-        "content": previous
+        "content": previous # ask the new question
     })
     
     agent_response = await call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type="answer", dataset=dataset, round=round)
