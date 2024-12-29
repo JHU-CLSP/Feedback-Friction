@@ -11,8 +11,8 @@ import asyncio
 import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
-from utils import setup_datalist, get_previous, get_messages, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, extract_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists
-from math_utils import is_equiv, get_unnormalized_answer, normalize_final_answer, last_boxed_only_string, remove_boxed
+from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists
+from dataset_specific_utils import is_equiv, get_unnormalized_answer, normalize_final_answer, last_boxed_only_string, remove_boxed
 from database import RedisCache
 
 
@@ -32,7 +32,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     prediction_list, response_list = [], []
     normalized_answer_list, normalized_prediction_list = [], []
     
-    new_messages = get_messages(dataset).copy()
+    new_messages = get_demonstrations(dataset).copy()
     new_messages.append({
         "role": "user",
         "content": previous
@@ -42,10 +42,10 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
 
     response_list = []
     response_list.append(agent_response)
-    normalized_prediction_list = extract_predictions(dataset, response_list)
+    normalized_prediction_list = get_normalized_predictions(dataset, response_list)
     feedback = ""
     if use_feedback:
-        if len(normalized_prediction_list) != 0 and normalized_prediction_list[0] != get_normalized_answer(dataset, data): # normalzied answer is the ground truth
+        if len(normalized_prediction_list) == 0 or normalized_prediction_list[0] != get_normalized_answer(dataset, data):
             # feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
             # also provide ground-truth answer trajectory
             #TODO: merge it here
@@ -122,8 +122,7 @@ if __name__ == '__main__':
     split = args.split
     use_feedback = args.use_feedback
     data_list = setup_datalist(args.dataset, mode=split)
-    if args.proportion != "1":
-        data_list = data_list[:int(len(data_list) * float(args.proportion))]
+    data_list = data_list[:int(len(data_list) * float(args.proportion))]
     tokenizer = AutoTokenizer.from_pretrained(agent_model)
     chunks = [data_list[x:x+500] for x in range(0, len(data_list), 500)]
     accuracies = [0 for _ in range(iterations)]
