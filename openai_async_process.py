@@ -11,7 +11,7 @@ import asyncio
 import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
-from utils import setup_datalist, get_previous, get_messages, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, extract_predictions, generate_question, get_process_answer, is_equivalent
+from utils import setup_datalist, get_previous, get_messages, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, extract_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists
 from math_utils import is_equiv, get_unnormalized_answer, normalize_final_answer, last_boxed_only_string, remove_boxed
 from database import RedisCache
 
@@ -43,15 +43,19 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     response_list = []
     response_list.append(agent_response)
     normalized_prediction_list = extract_predictions(dataset, response_list)
-    
     feedback = ""
     if use_feedback:
-        if len(normalized_prediction_list) == 0 or normalized_prediction_list[0] != get_normalized_answer(dataset, data):
+        if len(normalized_prediction_list) != 0 and normalized_prediction_list[0] != get_normalized_answer(dataset, data): # normalzied answer is the ground truth
             # feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
             # also provide ground-truth answer trajectory
             #TODO: merge it here
-            feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
+            feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving out the correct final answer: "}]
             feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+            # feedback = mask_answer_in_string(feedback, get_normalized_answer(dataset, data))
+            if check_if_ground_truth_exists(feedback, get_normalized_answer(dataset, data)):
+                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
+                feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+
     d = {
         "question": generate_question(dataset, data),
         "normalized_answer": get_normalized_answer(dataset, data),
