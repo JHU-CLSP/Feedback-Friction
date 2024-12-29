@@ -7,6 +7,7 @@ import aiohttp
 import numpy as np
 import json
 from datetime import datetime
+from math_utils import normalize_final_answer, remove_boxed, last_boxed_only_string, is_equiv
 
 
 gsm8k_list_of_end_prompts = ['the answer is', 'The correct answer is', 'The answer is', 'The answer is indeed', 'the correct answer is indeed']
@@ -361,7 +362,7 @@ def get_previous(dataset_name, data):
         return previous
     elif dataset_name == "math":
         # return "Question: " + data['problem'] + "\nAnswer:"
-        return data['problem'] + "\nAnswer:"
+        return data['problem']
     elif dataset_name == "trivia_qa":
         return data['question']
 
@@ -386,19 +387,15 @@ def get_messages(dataset_name):
             messages_gsm8k.extend(l)
         return messages_gsm8k
     elif dataset_name == "math":
-        messages_math = [{"role": "system", "content": "You are a smart assistant that solves math problems. If you think you're ready to output the answer, you can wrap your answer with \\boxed{}. Please follow this format metrically"}]
-        rand_list_from_train = np.random.choice(math_datalist, 5, replace=False)
-        for data in rand_list_from_train:
-            l = []
-            d = {"role": "user", "content": "Question: " + data['problem'] + "\nAnswer:"}
-            l.append(d)
-            # answers = data['solution'].split(". ")
-            # for answer in answers:
-            #     if answer == "":
-            #         continue
-            #     l.append({"role": "assistant", "content": answer})
-            l.append({"role": "assistant", "content": data['solution']})
-            messages_math.extend(l)
+        messages_math = [{"role": "system", "content": "You are a smart assistant that solves math problems. Please think step by step to solve the problem. If you think you're ready to output the answer, you can wrap your answer with \\boxed{}. Please follow this format"}]
+        # messages_math.append({"role": "user", "content": "Find the domain of the expression  $\\frac{\\sqrt{x-2}}{\\sqrt{5-x}}$."})
+        # messages_math.append({"role": "assistant", "content": "The expressions inside each square root must be non-negative. Therefore, $x-2 \\ge 0$, so $x\\ge2$, and $5 - x \\ge 0$, so $x \\le 5$. Also, the denominator cannot be equal to zero, so $5-x>0$, which gives $x<5$. Therefore, the domain of the expression is $\\boxed{[2,5)}$.\nFinal Answer: The final answer is $[2,5)$. I hope it is correct."})
+        # messages_math.append({"role": "user", "content": "If $\\det \\mathbf{A} = 2$ and $\\det \\mathbf{B} = 12,$ then find $\\det (\\mathbf{A} \\mathbf{B}).$"})
+        # messages_math.append({"role": "assistant", "content": "We have that $\\det (\\mathbf{A} \\mathbf{B}) = (\\det \\mathbf{A})(\\det \\mathbf{B}) = (2)(12) = \\boxed{24}.\nFinal Answer: The final answer is $24$. I hope it is correct."})
+        # messages_math.append({"role": "user", "content": "Terrell usually lifts two 20-pound weights 12 times. If he uses two 15-pound weights instead, how many times must Terrell lift them in order to lift the same total weight?"})
+        # messages_math.append({"role": "assistant", "content": "If Terrell lifts two 20-pound weights 12 times, he lifts a total of $2\\cdot 12\\cdot20=480$ pounds of weight.  If he lifts two 15-pound weights instead for $n$ times, he will lift a total of $2\\cdot15\\cdot n=30n$ pounds of weight.  Equating this to 480 pounds, we can solve for $n$:\n\\begin{align*}\n30n&=480\\\n\\Rightarrow\\qquad n&=480/30=\\boxed{16}\n\\end{align*}\nFinal Answer: The final answer is $16$. I hope it is correct."})
+        # messages_math.append({"role": "user", "content": "If the system of equations\n\n\\begin{align*}\n6x-4y&=a,\\\n6y-9x &=b.\n\\end{align*}has a solution $(x, y)$ where $x$ and $y$ are both nonzero,\nfind $\\frac{a}{b},$ assuming $b$ is nonzero."})
+        # messages_math.append({"role": "assistant", "content": "If we multiply the first equation by $-\\frac{3}{2}$, we obtain\n\n$$6y-9x=-\\frac{3}{2}a.$$Since we also know that $6y-9x=b$, we have\n\n$$-\\frac{3}{2}a=b\\Rightarrow\\frac{a}{b}=\\boxed{-\\frac{2}{3}}.$$\nFinal Answer: The final answer is $-\\frac{2}{3}$. I hope it is correct."})
         return messages_math
     elif dataset_name == "arc":
         messages_arc = [{"role": "system", "content": "You are a smart assistant that solves reasoning problems. If you think you're ready to output the answer, you can just output an answer in A, B, C or D. Please just output one character and follow this format metrically"}]
@@ -591,7 +588,17 @@ def extract_predictions(dataset, response_list):
 def generate_question(dataset, data):
     if dataset == "arc":
         question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
-    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k":
+    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k" or dataset == "gpqa":
         question = data[get_dataset_key(dataset)]
     return question
 
+
+def is_equivalent(dataset, item, data):
+    if dataset == "math":
+        try:
+            a, b = normalize_final_answer(remove_boxed(last_boxed_only_string((item["full_response"][0])))), normalize_final_answer(remove_boxed(last_boxed_only_string(data["solution"])))
+            if len(item["normalized_prediction"]) >= 1 and (is_equiv(a, b) or a.strip() == b.strip()):
+                return True
+        except:
+            return False
+    
