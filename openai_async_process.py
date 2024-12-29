@@ -12,7 +12,6 @@ import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
 from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists
-from dataset_specific_utils import is_equiv, get_unnormalized_answer, normalize_final_answer, last_boxed_only_string, remove_boxed
 from database import RedisCache
 
 
@@ -94,6 +93,7 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
         loop.close()
     
     return result_overall, leftover_problems
+
 
 if __name__ == '__main__':
     start_time = time.time()

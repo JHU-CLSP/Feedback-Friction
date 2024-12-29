@@ -58,6 +58,12 @@ def setup_datalist(dataset_name, mode="test"):
             return data_list
         elif mode == "train":
             return triviaqa_datalist
+    elif dataset_name == "gpqa":
+        ds = datasets.load_dataset("Idavidrein/gpqa", 'gpqa_diamond')
+        data_list = list(ds['train'])
+        global gpqa_datalist
+        gpqa_datalist = list(ds['train'])
+        return gpqa_datalist
         
 
 def get_previous(dataset_name, data):
@@ -76,6 +82,8 @@ def get_previous(dataset_name, data):
         return data['problem']
     elif dataset_name == "trivia_qa":
         return data['question']
+    elif dataset_name == "gpqa":
+        return data['Question']
 
 
 def get_demonstrations(dataset_name):
@@ -128,6 +136,16 @@ def get_demonstrations(dataset_name):
             l.append({"role": "assistant", "content": data['answer']["normalized_aliases"][0]})
             messages_triviaqa.extend(l)
         return messages_triviaqa
+    elif dataset_name == "gpqa":
+        messages_gpqa = [{"role": "system", "content": "You are a smart assistant. If you think you're ready to output the answer, you can just output an answer."}]
+        # rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
+        # for data in rand_list_from_train:
+        #     l = []
+        #     d = {"role": "user", "content": data['question']}
+        #     l.append(d)
+        #     l.append({"role": "assistant", "content": data['answer']})
+        #     messages_gpqa.extend(l)
+        return messages_gpqa
 
 
 def get_normalized_answer(dataset_name, data):
@@ -145,6 +163,8 @@ def get_normalized_answer(dataset_name, data):
         return res
     elif dataset_name == "trivia_qa":
         return data['answer']["normalized_value"]
+    elif dataset_name == "gpqa":
+        return data['Correct Answer']
 
 
 def get_dataset_key(dataset_name):
@@ -156,6 +176,8 @@ def get_dataset_key(dataset_name):
         return "context"
     elif dataset_name == "trivia_qa":
         return "question"
+    elif dataset_name == "gpqa":
+        return "Question"
     
 
 def get_process_answer(dataset_name, data):
@@ -165,6 +187,8 @@ def get_process_answer(dataset_name, data):
         return data["solution"]
     elif dataset_name == "trivia_qa":
         return data['answer']["normalized_value"]
+    elif dataset_name == "gpqa":
+        return data["Explanation"]
 
 
 def get_normalized_prediction(dataset_name, prediction):
@@ -182,6 +206,8 @@ def get_normalized_prediction(dataset_name, prediction):
         return res
     elif dataset_name == "trivia_qa":
         return normalize_answer(prediction)
+    elif dataset_name == "gpqa":
+        return prediction
     
 
 def flatten_list(new_messages):
@@ -316,5 +342,6 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
         round=round
     )
     
-    return agent_response   
+    return agent_response
+
 
