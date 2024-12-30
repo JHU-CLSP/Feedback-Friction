@@ -16,12 +16,12 @@ from database import RedisCache
 
 
 # Connect to your local Redis
-cache = RedisCache(host='localhost', port=6379, db=0) # try other db=1 on 6379 use 0 for default
+cache = None# RedisCache(host='localhost', port=6379, db=0) # try other db=1 on 6379 use 0 for default
 base_url = ['http://c002']
 ports = [1233, 1234, 1235, 1236]
 gsm8k_datalist = None
 math_datalist = None
-iterations = 10
+iterations = 10 # revise back later
 use_feedback = False
 np.random.seed(14)
 
@@ -31,8 +31,11 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     prediction_list, response_list = [], []
     normalized_answer_list, normalized_prediction_list = [], []
     
-    if dataset != "mmlu_pro":
+    if dataset != "mmlu_pro" and dataset != "mmlu":
         new_messages = get_messages(dataset).copy()
+    elif dataset == "mmlu":
+        new_messages = get_messages(dataset, data['subject']).copy() # now we have the desired subject 
+        # print(new_messages)
     else:
         new_messages = get_messages(dataset, data['category']).copy() # now we have the desired category 
     new_messages.append({
@@ -64,13 +67,13 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         "full_response": response_list,
         "feedback": feedback
     }
-    pbar.update(1)
+    # pbar.update(1)
     return d
 
 def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
     result_overall, leftover_problems = [[] for _ in range(iterations)], None
     for i in range(iterations):
-        pbar = tqdm(total=len(data_list))
+        pbar = None #tqdm(total=len(data_list), disable=True)
         loop = asyncio.get_event_loop()
         if loop.is_closed():
             asyncio.set_event_loop(asyncio.new_event_loop())
@@ -85,6 +88,7 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
             else:
                 temp = data_list[j]
                 if use_feedback:
+                    # print(item["full_response"])
                     temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect.\n" + "Here is some feedback: " + item["feedback"] + "\nAnswer the question again.\n"
                 else:
                     temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect. Answer the question again.\n"
@@ -126,10 +130,14 @@ if __name__ == '__main__':
         data_list = data_list[:int(len(data_list) * float(args.proportion))]
     tokenizer = AutoTokenizer.from_pretrained(agent_model)
     chunks = [data_list[x:x+500] for x in range(0, len(data_list), 500)]
+    print(len(chunks))
     accuracies = [0 for _ in range(iterations)]
-    
+    cnt = 0
     # running and post-training statistics collection
     for chunk in chunks:
+        cnt += 1
+        print("epoch number:")
+        print(cnt)
         result, leftover_problems = apply_async(chunk, agent_model, dataset, tokenizer, temperature, n)
         for i in range(iterations):
             accuracies[i] += len(result[i])
@@ -140,4 +148,18 @@ if __name__ == '__main__':
     print("Accuracies: ", [round(sum([accuracies[j] for j in range(i + 1)]) * 100 / len(data_list), 1) for i in range(iterations)])
     # print("Accuracies: ", [round(accuracies[i] * 100 / len(data_list), 1) for i in range(iterations)])
     print("Total TIME: ", time.time() - start_time)
+    
+    output_file = "mmlu70B_results.txt"  # Specify the output file name
+
+    # Calculate the accuracies
+    accuracies_list = [round(sum([accuracies[j] for j in range(i + 1)]) * 100 / len(data_list), 1) for i in range(iterations)]
+
+    # Calculate total time
+    total_time = time.time() - start_time
+
+    # Write results to the file
+    with open(output_file, "w") as file:  # Use "a" if you want to append to the file
+        file.write(f"Accuracies: {accuracies_list}\n")
+        file.write(f"Total TIME: {total_time:.2f} seconds\n")
+
 
