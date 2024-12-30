@@ -11,7 +11,7 @@ import asyncio
 import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
-from utils import setup_datalist, get_previous, get_messages, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, extract_predictions, generate_question, get_process_answer, mask_answer_in_string, check_if_ground_truth_exists
+from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists
 from database import RedisCache
 
 
@@ -31,13 +31,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     prediction_list, response_list = [], []
     normalized_answer_list, normalized_prediction_list = [], []
     
-    if dataset != "mmlu_pro" and dataset != "mmlu":
-        new_messages = get_messages(dataset).copy()
-    elif dataset == "mmlu":
-        new_messages = get_messages(dataset, data['subject']).copy() # now we have the desired subject 
-        # print(new_messages)
-    else:
-        new_messages = get_messages(dataset, data['category']).copy() # now we have the desired category 
+    new_messages = get_demonstrations(dataset).copy()
     new_messages.append({
         "role": "user",
         "content": previous # ask the new question
@@ -47,12 +41,13 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
 
     response_list = []
     response_list.append(agent_response)
-    normalized_prediction_list = extract_predictions(dataset, response_list)
+    normalized_prediction_list = get_normalized_predictions(dataset, response_list)
     feedback = ""
     if use_feedback:
-        if len(normalized_prediction_list) != 0 and normalized_prediction_list[0] != get_normalized_answer(dataset, data): # normalzied answer is the ground truth
+        if len(normalized_prediction_list) == 0 or normalized_prediction_list[0] != get_normalized_answer(dataset, data):
             # feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
             # also provide ground-truth answer trajectory
+            #TODO: merge it here
             feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving out the correct final answer: "}]
             feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             # feedback = mask_answer_in_string(feedback, get_normalized_answer(dataset, data))
@@ -83,7 +78,8 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
         data_list_temp = []
         for j in range(len(data_list)):
             item = result[j]
-            if len(item["normalized_prediction"]) >= 1 and item["normalized_answer"] == item["normalized_prediction"][0]:
+            # if len(item["normalized_prediction"]) >= 1 and item["normalized_answer"] == item["normalized_prediction"][0]:
+            if len(item["normalized_prediction"]) >= 1 and is_equivalent(dataset, item, data_list[j]):
                 result_overall[i].append(item)
             else:
                 temp = data_list[j]
@@ -98,6 +94,7 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
         loop.close()
     
     return result_overall, leftover_problems
+
 
 if __name__ == '__main__':
     start_time = time.time()
@@ -126,8 +123,7 @@ if __name__ == '__main__':
     split = args.split
     use_feedback = args.use_feedback
     data_list = setup_datalist(args.dataset, mode=split)
-    if args.proportion != "1":
-        data_list = data_list[:int(len(data_list) * float(args.proportion))]
+    data_list = data_list[:int(len(data_list) * float(args.proportion))]
     tokenizer = AutoTokenizer.from_pretrained(agent_model)
     chunks = [data_list[x:x+500] for x in range(0, len(data_list), 500)]
     print(len(chunks))
