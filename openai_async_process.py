@@ -23,6 +23,7 @@ gsm8k_datalist = None
 math_datalist = None
 iterations = 10
 use_feedback = False
+use_process_feedback = False
 np.random.seed(14)
 
 
@@ -45,10 +46,11 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     feedback = ""
     if use_feedback:
         if len(normalized_prediction_list) == 0 or normalized_prediction_list[0] != get_normalized_answer(dataset, data):
-            # feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
-            # also provide ground-truth answer trajectory
-            #TODO: merge it here
-            feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving out the correct final answer: "}]
+            if not use_process_feedback:
+                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
+            else:
+                # also provide ground-truth answer trajectory
+                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving out the correct final answer: "}]
             feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             # feedback = mask_answer_in_string(feedback, get_normalized_answer(dataset, data))
             if check_if_ground_truth_exists(feedback, get_normalized_answer(dataset, data)):
@@ -109,6 +111,8 @@ if __name__ == '__main__':
     parser.add_argument("--split", type=str, default="test", help="Split to use for the dataset")
     parser.add_argument("--proportion", type=str, default="1", help="Proportion of the dataset to use")
     parser.add_argument("--use_feedback", action="store_true", help="Use feedback for the model")
+    parser.add_argument("--iterations", type=int, default=10, help="Number of iterations")
+    parser.add_argument("--user_process_feedback", action="store_true", help="Use user process feedback")
     
     # prepare the arguments
     args = parser.parse_args()
@@ -121,6 +125,8 @@ if __name__ == '__main__':
     n = int(args.n)
     split = args.split
     use_feedback = args.use_feedback
+    iterations = args.iterations
+    use_process_feedback = args.user_process_feedback
     data_list = setup_datalist(args.dataset, mode=split)
     data_list = data_list[:int(len(data_list) * float(args.proportion))]
     tokenizer = AutoTokenizer.from_pretrained(agent_model)
