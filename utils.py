@@ -62,8 +62,8 @@ def setup_datalist(dataset_name, mode="test"):
         ds = datasets.load_dataset("Idavidrein/gpqa", 'gpqa_diamond')
         data_list = list(ds['train'])
         global gpqa_datalist
-        gpqa_datalist = list(ds['train'])
-        return gpqa_datalist
+        gpqa_datalist = list(datasets.load_dataset("Idavidrein/gpqa", 'gpqa_main')['train'])
+        return data_list
         
 
 def get_previous(dataset_name, data):
@@ -137,14 +137,14 @@ def get_demonstrations(dataset_name):
             messages_triviaqa.extend(l)
         return messages_triviaqa
     elif dataset_name == "gpqa":
-        messages_gpqa = [{"role": "system", "content": "You are a smart assistant. If you think you're ready to output the answer, you can just output an answer."}]
-        # rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
-        # for data in rand_list_from_train:
-        #     l = []
-        #     d = {"role": "user", "content": data['question']}
-        #     l.append(d)
-        #     l.append({"role": "assistant", "content": data['answer']})
-        #     messages_gpqa.extend(l)
+        messages_gpqa = [{"role": "system", "content": "Think through the problem step by step. When ready, format your answer as: [Your reasoning]. \n\nThe answer is: [your conclusion]"}]
+        rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
+        for data in rand_list_from_train:
+            l = []
+            d = {"role": "user", "content": data['Question']}
+            l.append(d)
+            l.append({"role": "assistant", "content": data['Explanation'] + "\n\nThe answer is: " + data['Correct Answer']})
+            messages_gpqa.extend(l)
         return messages_gpqa
 
 
@@ -207,7 +207,7 @@ def get_normalized_prediction(dataset_name, prediction):
     elif dataset_name == "trivia_qa":
         return normalize_answer(prediction)
     elif dataset_name == "gpqa":
-        return prediction
+        return prediction.strip()
     
 
 def flatten_list(new_messages):
@@ -242,7 +242,7 @@ def is_equivalent(dataset, item, data):
 
 def get_normalized_predictions(dataset, response_list):
     normalized_prediction_list = []
-    if dataset == "gsm8k":
+    if dataset == "gsm8k" or dataset == "gpqa":
         for term in gsm8k_list_of_end_prompts:
             try:
                 for response in response_list:
@@ -256,33 +256,27 @@ def get_normalized_predictions(dataset, response_list):
                             break
                 if len(normalized_prediction_list) != 0:
                     break
-            except:
+            except Exception as e:
+                print(e)
                 print("Error")
-    elif dataset == "math":
+    elif dataset == "math" or dataset == "arc" or dataset == "trivia_qa":
         for response in response_list:
             try:
                 prediction = response
                 normalized_prediction = get_normalized_prediction(dataset, prediction)
                 normalized_prediction_list.append(normalized_prediction)
-            except:
-                print("Error")
-    elif dataset == "arc":
-        for response in response_list:
-            try:
-                prediction = response
-                normalized_prediction = prediction
-                normalized_prediction_list.append(normalized_prediction)
-            except:
-                print("Error")
-    elif dataset == "trivia_qa":
-        for response in response_list:
-            try:
-                prediction = response
-                normalized_prediction = get_normalized_prediction(dataset, prediction)
-                normalized_prediction_list.append(normalized_prediction)
-            except:
+            except Exception as e:
+                print(e)
                 print("Error")
     return normalized_prediction_list
+
+
+def check_if_ground_truth_exists(input_string, ground_truth):
+    # return True if ground truth exists
+    ground_truth_str = str(ground_truth)
+    match = re.search(rf'\b{re.escape(ground_truth_str)}\b', input_string)
+    # match = re.search(rf'\b{ground_truth_str}\b', input_string)
+    return match is not None
 
 
 async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None):
