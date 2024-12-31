@@ -112,7 +112,7 @@ if __name__ == '__main__':
     parser.add_argument("--proportion", type=str, default="1", help="Proportion of the dataset to use")
     parser.add_argument("--use_feedback", action="store_true", help="Use feedback for the model")
     parser.add_argument("--iterations", type=int, default=10, help="Number of iterations")
-    parser.add_argument("--user_process_feedback", action="store_true", help="Use user process feedback")
+    parser.add_argument("--use_process_feedback", action="store_true", help="Use process feedback")
     
     # prepare the arguments
     args = parser.parse_args()
@@ -126,7 +126,7 @@ if __name__ == '__main__':
     split = args.split
     use_feedback = args.use_feedback
     iterations = args.iterations
-    use_process_feedback = args.user_process_feedback
+    use_process_feedback = args.use_process_feedback
     data_list = setup_datalist(args.dataset, mode=split)
     data_list = data_list[:int(len(data_list) * float(args.proportion))]
     tokenizer = AutoTokenizer.from_pretrained(agent_model)
