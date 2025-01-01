@@ -45,7 +45,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     normalized_prediction_list = get_normalized_predictions(dataset, response_list)
     feedback = ""
     if use_feedback:
-        if len(normalized_prediction_list) == 0 or normalized_prediction_list[0] != get_normalized_answer(dataset, data):
+        if len(normalized_prediction_list) == 0 or not is_equivalent(dataset, {"normalized_prediction": normalized_prediction_list, "normalized_answer": get_normalized_answer(dataset, data)}, data):
             if not use_process_feedback:
                 feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
             else:

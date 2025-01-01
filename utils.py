@@ -231,6 +231,8 @@ def is_equivalent(dataset, item, data):
             a, b = normalize_final_answer(remove_boxed(last_boxed_only_string((item["full_response"][0])))), normalize_final_answer(remove_boxed(last_boxed_only_string(data["solution"])))
             if len(item["normalized_prediction"]) >= 1 and (is_equiv(a, b) or a.strip() == b.strip()):
                 return True
+            if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
+                return True
         except:
             return False
     elif dataset == "arc" or dataset == "gsm8k" or dataset == "trivia_qa" or dataset == "gpqa" or dataset == "mmlu_pro":
