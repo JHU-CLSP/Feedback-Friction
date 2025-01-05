@@ -235,8 +235,14 @@ def is_equivalent(dataset, item, data):
                 return True
         except:
             return False
-    elif dataset == "arc" or dataset == "gsm8k" or dataset == "trivia_qa" or dataset == "gpqa" or dataset == "mmlu_pro":
+        return False
+    elif dataset == "arc" or dataset == "gsm8k" or dataset == "gpqa" or dataset == "mmlu_pro":
         if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
+            return True
+        else:
+            return False
+    elif dataset == "trivia_qa":
+        if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] in data['answer']['normalized_aliases']:
             return True
         else:
             return False
@@ -298,9 +304,9 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     content = {
         "model": agent_model,
         "messages": new_messages,
-        "max_tokens": 1000,
+        "max_tokens": 2000,
         "temperature": temperature,
-        "stop_token_ids": [128001, 128009],
+        "stop_token_ids": [128001, 128009, tokenizer.eos_token_id],
         "best_of": n,
         "n": n,
         "logprobs": 1,
@@ -328,15 +334,15 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     # Store responses
     if type is None or dataset is None or round is None:
         raise ValueError("Type or dataset is None")
-    cache.store(
-        prompt=flatten_list(new_messages),
-        response=agent_response,
-        model=agent_model,
-        temperature=temperature,
-        type=type,
-        dataset=dataset,
-        round=round
-    )
+    # cache.store(
+    #     prompt=flatten_list(new_messages),
+    #     response=agent_response,
+    #     model=agent_model,
+    #     temperature=temperature,
+    #     type=type,
+    #     dataset=dataset,
+    #     round=round
+    # )
     
     return agent_response
 
