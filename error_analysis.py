@@ -25,7 +25,14 @@ iterations = 1
 use_feedback = False
 use_process_feedback = False
 np.random.seed(14)
-
+category_map = {
+    "impossible to solve": 0,
+    "too complicated": 0,
+    "feedback is wrong": 0,
+    "model is not following the feedback": 0,
+    "style or formalization issue": 0,
+    "unknown": 0
+}
 
 
 async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokenizer=None, temperature=0.0, n=1, round=0):
@@ -35,7 +42,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     
     new_messages = [{
         "role": "system",
-        "content": "You are an error categorizer specialized in analyzing why Language Learning Models (LLMs) fail to self-improve when solving problems. When provided with an LLM's prediction trajectory and the feedback it receives, you will categorize the errors into one of six categories:\n\n1. Problem is Impossible to Solve\n   - The problem itself is fundamentally flawed\n   - External tools are required (e.g., calculator for complex calculations, search engine for obscure facts)\n\n2. Problem is Too Complicated\n   - The problem exceeds the model's knowledge scope\n   - Example: A level 5 math problem beyond the model's training\n\n3. Feedback is Wrong\n   - The feedback generator model provides incorrect guidance\n   - You can identify this by comparing the feedback against the provided ground truth answer\n\n4. Model is Not Following Feedback\n   - The model fails to incorporate or properly implement the given feedback\n   - This includes cases where the feedback model provides the correct answer, but the model still cannot generate it\n\n5. Style or Formalization Issue\n   - The answer is logically correct but has problems with:\n   - Formatting, presentation, or style requirements\n   - Formal notation or specific representation requirements\n   - Minor stylistic issues that don't affect correctness\n\n6. Unknown\n   - The error cannot be clearly categorized into any of the above categories\n\nWhen providing your analysis, you should:\n1. Clearly explain your reasoning for choosing a particular category\n2. Support your categorization with specific examples from the provided trajectory\n3. End your response with:\n\n\"The error is: [category]\" where category is one of:\n- impossible to solve\n- too complicated\n- feedback is wrong\n- model is not following the feedback\n- style or formalization issue\n- unknown. Remeber that you should give the category in the end of your response!"
+        "content": "You are an error categorizer specialized in analyzing why Language Learning Models (LLMs) fail to self-improve when solving problems. When provided with an LLM's prediction trajectory and the feedback it receives, you will categorize the errors into one of six categories:\n\n1. Problem is Impossible to Solve\n   - The problem itself is fundamentally flawed\n   - External tools are required (e.g., calculator for complex calculations, search engine for obscure facts)\n\n2. Problem is Too Complicated\n   - The problem exceeds the model's knowledge scope\n   - Example: A level 5 math problem beyond the model's training\n\n3. Feedback is Wrong\n   - The feedback generator model provides incorrect guidance\n   - The feedback fails to identify actual mistakes in the model's response\n   - The feedback is too vague or generic to be helpful\n   - You can identify these issues by comparing the feedback against the provided ground truth answer\n\n4. Model is Not Following Feedback\n   - The model fails to incorporate or properly implement the given feedback\n   - This includes cases where the feedback model provides the correct answer, but the model still cannot generate it\n\n5. Style or Formalization Issue\n   - The answer is logically correct but has problems with representation, such as:\n   - Mathematical notation: e.g., writing boxed{[-2, 7]} vs boxed{x ∈ [-2,7]} when either is acceptable\n   - Formatting preferences: using different but equivalent representations\n   - Presentation style: verbose vs. concise expressions of the same concept\n   - Formal notation variations that don't affect mathematical correctness\n   - Different but logically equivalent ways of expressing the same solution\n   - Minor stylistic issues that don't impact the correctness of the solution\n\n6. Unknown\n   - The error cannot be clearly categorized into any of the above categories\n\nWhen providing your analysis, you should:\n1. Clearly explain your reasoning for choosing a particular category\n2. Support your categorization with specific examples from the provided trajectory\n3. End your response with:\n\n\"The error is: [category]\" where category is one of:\n- impossible to solve\n- too complicated\n- feedback is wrong\n- model is not following the feedback\n- style or formalization issue\n- unknown"
     }]
     
     new_messages.append({
@@ -52,9 +59,29 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     response_list = []
     response_list.append(agent_response)
 
+    try:
+        category = agent_response.split("The error is: ")[1].strip()
+    except:
+        category = "unknown"
+    if category not in category_map:
+        if "impossible to solve" in category:
+            category = "impossible to solve"
+        elif "too complicated" in category:
+            category = "too complicated"
+        elif "feedback is wrong" in category:
+            category = "feedback is wrong"
+        elif "model is not following the feedback" in category:
+            category = "model is not following the feedback"
+        elif "style or formalization issue" in category:
+            category = "style or formalization issue"
+        else:
+            category = "unknown"
+
     d = {
         "question": generate_question(dataset, data),
         "full_response": response_list,
+        "category": category,
+        "answer": process_answer
     }
     pbar.update(1)
     return d
@@ -106,46 +133,20 @@ if __name__ == '__main__':
     chunks = [data_list[x:x+500] for x in range(0, len(data_list), 500)]
     accuracies = [0 for _ in range(iterations)]
     
-    category_map = {
-        "impossible to solve": 0,
-        "too complicated": 0,
-        "feedback is wrong": 0,
-        "model is not following the feedback": 0,
-        "style or formalization issue": 0,
-        "unknown": 0
-    }
-    
     # running and post-training statistics collection
     for chunk in chunks:
         result, leftover_problems = apply_async(chunk, agent_model, dataset, tokenizer, temperature, n)
         for i in range(iterations):
             for j in range(len(chunk)):
                 item = result[i][j]
-                try:
-                    category = item["full_response"][0].split("The error is: ")[1].strip()
-                except:
-                    category = "unknown"
-                if category not in category_map:
-                    if "impossible to solve" in category:
-                        category_map["impossible to solve"] += 1
-                    elif "too complicated" in category:
-                        category_map["too complicated"] += 1
-                    elif "feedback is wrong" in category:
-                        category_map["feedback is wrong"] += 1
-                    elif "model is not following the feedback" in category:
-                        category_map["model is not following the feedback"] += 1
-                    elif "style or formalization issue" in category:
-                        category_map["style or formalization issue"] += 1
-                    else:
-                        category_map["unknown"] += 1
-                    category_map[category] = 0
-                else:
-                    category_map[category] += 1
+                category = item["category"]
+                category_map[category] += 1
                 write_file.write(json.dumps(item) + "\n")
-        
+    
     write_file.close()
     # print the results that's the sum of the accuracies
     print("Categories: ", category_map)
+    print("Categories percentage: ", {k: round(v * 100 / len(data_list), 1) for k, v in category_map.items()})
     # print("Accuracies: ", [round(accuracies[i] * 100 / len(data_list), 1) for i in range(iterations)])
     print("Total TIME: ", time.time() - start_time)
 
