@@ -30,8 +30,12 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     previous = get_previous(dataset, data) # extract and reformat question
     prediction_list, response_list = [], []
     normalized_answer_list, normalized_prediction_list = [], []
-    
-    new_messages = get_demonstrations(dataset).copy()
+    if dataset == "mmlu_pro":
+        new_messages = get_demonstrations(dataset, data['category']).copy()
+    elif dataset == "mmlu":
+        new_messages = get_demonstrations(dataset, data['subject']).copy()
+    else:
+        new_messages = get_demonstrations(dataset, category=None).copy()
     new_messages.append({
         "role": "user",
         "content": previous # ask the new question
@@ -62,13 +66,15 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         "full_response": response_list,
         "feedback": feedback
     }
-    # pbar.update(1)
+    pbar.update(1)
     return d
 
 def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
     result_overall, leftover_problems = [[] for _ in range(iterations)], None
+    # pbar = tqdm(total=10)
     for i in range(iterations):
-        pbar = None #tqdm(total=len(data_list), disable=True)
+        tqdm.write(f"iteration: {i}") # record 
+        pbar = tqdm(total=len(data_list))
         loop = asyncio.get_event_loop()
         if loop.is_closed():
             asyncio.set_event_loop(asyncio.new_event_loop())
@@ -91,6 +97,10 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
                 data_list_temp.append(temp)
         data_list = data_list_temp
         leftover_problems = data_list
+        #tqdm.write(f"correct overall: {len(result_overall[i])}") # record 
+        # print("leftover in this epoch:" + str(len(leftover_problems[i])))
+        #tqdm.write(f"leftover in this epoch: {len(data_list)}")
+        #pbar.update(i)
         loop.close()
     
     return result_overall, leftover_problems
@@ -103,7 +113,7 @@ if __name__ == '__main__':
     parser.add_argument("--dataset", type=str, default="math", help="dataset to test with")
     parser.add_argument("--agent_model", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct", help="Agent model to use for generating responses")
     parser.add_argument("--write_file", type=str, default="output_arc.jsonl", help="File to write the output to")
-    parser.add_argument("--base_url", type=str, default="http://c015", help="Base URL to use for the agent server")
+    parser.add_argument("--base_url", type=str, default="http://c004", help="Base URL to use for the agent server")
     parser.add_argument("--ports", type=str, default="1233_1234_1235_1236", help="Base URL to use for the agent server")
     parser.add_argument("--temperature", type=str, default="0.0", help="Base temperature to use for inference")
     parser.add_argument("--n", type=str, default="1", help="Base best_of n to use for inference")
@@ -132,9 +142,9 @@ if __name__ == '__main__':
     # running and post-training statistics collection
     for chunk in chunks:
         cnt += 1
-        print("epoch number:")
-        print(cnt)
+        print("epoch number: " + str(cnt))
         result, leftover_problems = apply_async(chunk, agent_model, dataset, tokenizer, temperature, n)
+        # print(time.time() - start_time) # time until this epoch
         for i in range(iterations):
             accuracies[i] += len(result[i])
         for d in leftover_problems:
@@ -145,7 +155,7 @@ if __name__ == '__main__':
     # print("Accuracies: ", [round(accuracies[i] * 100 / len(data_list), 1) for i in range(iterations)])
     print("Total TIME: ", time.time() - start_time)
     
-    output_file = "mmlu70B_results.txt"  # Specify the output file name
+    output_file = "mmlu_70B_3.3_all_results.txt"  # Specify the output file name
 
     # Calculate the accuracies
     accuracies_list = [round(sum([accuracies[j] for j in range(i + 1)]) * 100 / len(data_list), 1) for i in range(iterations)]

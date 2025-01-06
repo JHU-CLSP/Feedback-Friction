@@ -90,7 +90,6 @@ def setup_datalist(dataset_name, mode="test"):
             if data['category'] not in mmlu_datalist:
                 mmlu_datalist[data['category']] = []
             mmlu_datalist[data['category']].append(data)
-        # print(mmlu_datalist['business'][0:5])
         if mode == "test":
             return data_list # all test data
         elif mode == "train":
@@ -120,20 +119,26 @@ def get_previous(dataset_name, data):
     elif dataset_name == "trivia_qa":
         return data['question']
     elif dataset_name == "mmlu":
-        previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['choices']) + '\nAnswer:'
+        previous = "Question: " + data['question'] + "\nChoices: "
+        for i in range(len(data['choices'])):
+            previous += chr(ord('A') + i) + " - " + data['choices'][i] + " "
+        previous = previous[:-1] + '\nAnswer:'
+        # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['choices']) + '\nAnswer:'
         return previous
     elif dataset_name == "mmlu_pro":
-        #previous = "Question: " + data['question'] + "\nChoices: "
-        #for i in range(len(data['options'])):
-        #    previous += chr(ord('A') + i) + " - " + data['options'][i] + " "
-        #previous = previous[:-1] + '\nAnswer:'
-        previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['options']) + '\nAnswer:'
-        return previous # generate the formatted question
+        
+        previous = "Question: " + data['question'] + "\nChoices: "
+        for i in range(len(data['options'])):
+            previous += chr(ord('A') + i) + " - " + data['options'][i] + " "
+        previous = previous[:-1] + '\nAnswer:'
+        
+        # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['options']) + '\nAnswer:'
+        return previous
     elif dataset_name == "gpqa":
         return data['Question']
 
 
-def get_demonstrations(dataset_name):
+def get_demonstrations(dataset_name, category):
     if dataset_name == "gsm8k":
         messages_gsm8k = []
         rand_list_from_train = np.random.choice(gsm8k_datalist, 9, replace=False)
@@ -186,46 +191,45 @@ def get_demonstrations(dataset_name):
     elif dataset_name == "mmlu": 
         messages_mmlu = [{
             "role": "system",
-            "content": "You are a smart assistant that solves multiple-choice questions about " + category + ". Think step by step. If you think you're ready to output the answer, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always wrap the parentheses around the letter choice."
+            "content": "The following are multiple-choice questions (with answers) about " + category + ". Please think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
         }] # same way for extract the answer
         rand_list_from_train = np.random.choice(mmlu_datalist_all[category], 5, replace=False)
+        i = 0
         for data in rand_list_from_train: # since no cot content exists, we just use answer
             l = []
             d = {
                 "role": "user",
                 "content": data['question'] + "\n\nChoices: " + '\n'.join(data["choices"])
             }
+            for j in range(len(rand_list_from_train[i]['choices'])):
+                d['content'] += chr(ord('A') + j) + " - " + rand_list_from_train[i]['choices'][j] + " "
+            d['content'] = d['content'][:-1] + '\nAnswer:'
             l.append(d)
             num = data['answer']
             idx_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
             ans_num = idx_letter[num]
             l.append({"role": "assistant", "content": "The answer is " + "(" + ans_num + ")"})
             messages_mmlu.extend(l)
+            i += 1
         # print(messages_mmlu)
         return messages_mmlu
-    
-    elif dataset_name == "mmlu_pro": # checked, please double check
+    elif dataset_name == "mmlu_pro":
         messages_mmlu_pro = [{
             "role": "system",
-            "content": "You are a smart assistant that solves multiple-choice questions about " + category + ". If you think you're ready to output the answer, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
+            "content": "The following are multiple-choice questions (with answers) about " + category + ". Please think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
         }]
-        # print(category)
-        
-        data_list = np.random.choice(mmlu_datalist[category], 5, replace=False) # get from the specified category
-        
-        for i in range(5): # reformat
-            # print(i, data_list[i])
+        data_list = np.random.choice(mmlu_datalist[category], 5, replace=False)
+        for i in range(5):
             d = {"role": "user", "content": "Question: " + data_list[i]['question'] + "\nChoices: "}
-            # print(data_list[i])
-            for j in range(len(data_list[i]['options'])): # left unchanged
+            for j in range(len(data_list[i]['options'])):
                 d['content'] += chr(ord('A') + j) + " - " + data_list[i]['options'][j] + " "
             d['content'] = d['content'][:-1] + '\nAnswer:'
             messages_mmlu_pro.append(d)
-            cot_reasoning = data_list[i]["cot_content"].replace("A: Let's think step by step. ", "") # get rid of the A: in cot content
-            cot_reasoning_splits = cot_reasoning.split(". ")
+            cot_reasoning = data_list[i]["cot_content"].replace("A: ", "")
+            # cot_reasoning_splits = cot_reasoning.split(". ")
             # for cot_reasoning_split in cot_reasoning_splits:
+            #     messages_mmlu_pro.append({"role": "assistant", "content": cot_reasoning_split})
             messages_mmlu_pro.append({"role": "assistant", "content": cot_reasoning})
-        #print(messages_mmlu_pro)
         return messages_mmlu_pro
     elif dataset_name == "gpqa":
         messages_gpqa = [{"role": "system", "content": "You are a smart assistant. If you think you're ready to output the answer, you can just output an answer."}]
@@ -344,14 +348,6 @@ def flatten_list(new_messages):
     return "\n".join(messages)
 
 
-def generate_question(dataset, data):
-    if dataset == "arc":
-        question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
-    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k" or dataset == "gpqa":
-        question = data[get_dataset_key(dataset)]
-    return question
-
-
 def is_equivalent(dataset, item, data):
     if dataset == "math":
         try:
@@ -360,7 +356,7 @@ def is_equivalent(dataset, item, data):
                 return True
         except:
             return False
-    elif dataset == "arc" or dataset == "gsm8k" or dataset == "trivia_qa" or dataset == "gpqa" or dataset == "mmlu_pro":
+    elif dataset == "arc" or dataset == "gsm8k" or dataset == "trivia_qa" or dataset == "gpqa" or dataset == "mmlu_pro" or dataset == "mmlu":
         if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
             return True
         else:
@@ -402,6 +398,22 @@ def get_normalized_predictions(dataset, response_list):
             except:
                 print("Error")
     elif dataset == "trivia_qa":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "mmlu_pro":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "mmlu":
         for response in response_list:
             try:
                 prediction = response
