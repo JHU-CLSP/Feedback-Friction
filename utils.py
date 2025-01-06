@@ -98,8 +98,8 @@ def setup_datalist(dataset_name, mode="test"):
         ds = datasets.load_dataset("Idavidrein/gpqa", 'gpqa_diamond')
         data_list = list(ds['train'])
         global gpqa_datalist
-        gpqa_datalist = list(ds['train'])
-        return gpqa_datalist
+        gpqa_datalist = list(datasets.load_dataset("Idavidrein/gpqa", 'gpqa_main')['train'])
+        return data_list
         
 
 def get_previous(dataset_name, data):
@@ -232,14 +232,14 @@ def get_demonstrations(dataset_name, category):
             messages_mmlu_pro.append({"role": "assistant", "content": cot_reasoning})
         return messages_mmlu_pro
     elif dataset_name == "gpqa":
-        messages_gpqa = [{"role": "system", "content": "You are a smart assistant. If you think you're ready to output the answer, you can just output an answer."}]
-        # rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
-        # for data in rand_list_from_train:
-        #     l = []
-        #     d = {"role": "user", "content": data['question']}
-        #     l.append(d)
-        #     l.append({"role": "assistant", "content": data['answer']})
-        #     messages_gpqa.extend(l)
+        messages_gpqa = [{"role": "system", "content": "Think through the problem step by step. When ready, format your answer as: [Your reasoning]. \n\nThe answer is: [your conclusion]"}]
+        rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
+        for data in rand_list_from_train:
+            l = []
+            d = {"role": "user", "content": data['Question']}
+            l.append(d)
+            l.append({"role": "assistant", "content": data['Explanation'] + "\n\nThe answer is: " + data['Correct Answer']})
+            messages_gpqa.extend(l)
         return messages_gpqa
 
 
@@ -338,7 +338,7 @@ def get_normalized_prediction(dataset_name, prediction):
             return match.group(1)
         return random.choice(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) # answer not found then random
     elif dataset_name == "gpqa":
-        return prediction
+        return prediction.strip()
     
 
 def flatten_list(new_messages):
@@ -354,10 +354,18 @@ def is_equivalent(dataset, item, data):
             a, b = normalize_final_answer(remove_boxed(last_boxed_only_string((item["full_response"][0])))), normalize_final_answer(remove_boxed(last_boxed_only_string(data["solution"])))
             if len(item["normalized_prediction"]) >= 1 and (is_equiv(a, b) or a.strip() == b.strip()):
                 return True
+            if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
+                return True
         except:
             return False
+        return False
     elif dataset == "arc" or dataset == "gsm8k" or dataset == "trivia_qa" or dataset == "gpqa" or dataset == "mmlu_pro" or dataset == "mmlu":
         if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
+            return True
+        else:
+            return False
+    elif dataset == "trivia_qa":
+        if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] in data['answer']['normalized_aliases']:
             return True
         else:
             return False
@@ -365,7 +373,7 @@ def is_equivalent(dataset, item, data):
 
 def get_normalized_predictions(dataset, response_list):
     normalized_prediction_list = []
-    if dataset == "gsm8k":
+    if dataset == "gsm8k" or dataset == "gpqa":
         for term in gsm8k_list_of_end_prompts:
             try:
                 for response in response_list:
@@ -379,31 +387,17 @@ def get_normalized_predictions(dataset, response_list):
                             break
                 if len(normalized_prediction_list) != 0:
                     break
-            except:
+            except Exception as e:
+                print(e)
                 print("Error")
-    elif dataset == "math":
+    elif dataset == "math" or dataset == "arc" or dataset == "trivia_qa":
         for response in response_list:
             try:
                 prediction = response
                 normalized_prediction = get_normalized_prediction(dataset, prediction)
                 normalized_prediction_list.append(normalized_prediction)
-            except:
-                print("Error")
-    elif dataset == "arc":
-        for response in response_list:
-            try:
-                prediction = response
-                normalized_prediction = prediction
-                normalized_prediction_list.append(normalized_prediction)
-            except:
-                print("Error")
-    elif dataset == "trivia_qa":
-        for response in response_list:
-            try:
-                prediction = response
-                normalized_prediction = get_normalized_prediction(dataset, prediction)
-                normalized_prediction_list.append(normalized_prediction)
-            except:
+            except Exception as e:
+                print(e)
                 print("Error")
     elif dataset == "mmlu_pro":
         for response in response_list:
@@ -424,6 +418,14 @@ def get_normalized_predictions(dataset, response_list):
     return normalized_prediction_list
 
 
+def check_if_ground_truth_exists(input_string, ground_truth):
+    # return True if ground truth exists
+    ground_truth_str = str(ground_truth)
+    match = re.search(rf'\b{re.escape(ground_truth_str)}\b', input_string)
+    # match = re.search(rf'\b{ground_truth_str}\b', input_string)
+    return match is not None
+
+
 async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None):
     if n != 1:
         raise ValueError("n must be 1")
@@ -441,9 +443,9 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     content = {
         "model": agent_model,
         "messages": new_messages,
-        "max_tokens": 1000,
+        "max_tokens": 2000,
         "temperature": temperature,
-        "stop_token_ids": [128001, 128009],
+        "stop_token_ids": [128001, 128009, tokenizer.eos_token_id],
         "best_of": n,
         "n": n,
         "logprobs": 1,
@@ -471,17 +473,16 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     # Store responses
     if type is None or dataset is None or round is None:
         raise ValueError("Type or dataset is None")
-    '''
-    cache.store(
-        prompt=flatten_list(new_messages),
-        response=agent_response,
-        model=agent_model,
-        temperature=temperature,
-        type=type,
-        dataset=dataset,
-        round=round
-    )
-    '''
+    # cache.store(
+    #     prompt=flatten_list(new_messages),
+    #     response=agent_response,
+    #     model=agent_model,
+    #     temperature=temperature,
+    #     type=type,
+    #     dataset=dataset,
+    #     round=round
+    # )
+    
     return agent_response
 
 def mask_answer_in_string(input_string, ground_truth):

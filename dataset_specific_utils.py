@@ -1,7 +1,7 @@
 import re
 import signal
 from typing import Dict, List, Optional
-
+import string
 import datasets
 
 
@@ -579,10 +579,4 @@ def mask_answer_in_string(input_string, ground_truth):
     return masked_string
 
 
-def check_if_ground_truth_exists(input_string, ground_truth):
-    # return True if ground truth exists
-    ground_truth_str = str(ground_truth)
-    match = re.search(rf'\b{ground_truth_str}\b', input_string)
-    return match is not None
-
-gsm8k_list_of_end_prompts = ['the answer is', 'The correct answer is', 'The answer is', 'The answer is indeed', 'the correct answer is indeed']
+gsm8k_list_of_end_prompts = ['the answer is', 'The correct answer is', 'The answer is:', "The answer is", 'The answer is indeed', 'the correct answer is indeed']
