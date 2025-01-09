@@ -11,13 +11,13 @@ import asyncio
 import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
-from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists
+from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists, check_if_ground_truth_exists_mcq
 from database import RedisCache
 
 
 # Connect to your local Redis
 cache = None# RedisCache(host='localhost', port=6379, db=0) # try other db=1 on 6379 use 0 for default
-base_url = ['http://c002']
+base_url = ['http://c004']
 ports = [1233, 1234, 1235, 1236]
 gsm8k_datalist = None
 math_datalist = None
@@ -57,10 +57,16 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                 feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving out the correct final answer: "}]
             feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             # feedback = mask_answer_in_string(feedback, get_normalized_answer(dataset, data))
-            if check_if_ground_truth_exists(feedback, get_normalized_answer(dataset, data)):
-                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
-                feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
-
+            # enhance inference time
+            if dataset != "mmlu" and dataset != "mmlu_pro" and dataset != "gpqa":
+                if check_if_ground_truth_exists(feedback, get_normalized_answer(dataset, data)):
+                    feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
+                    feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+            else:
+                if check_if_ground_truth_exists_mcq(feedback, get_normalized_answer(dataset, data)):
+                    feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
+                    feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+  
     d = {
         "question": generate_question(dataset, data),
         "normalized_answer": get_normalized_answer(dataset, data),
@@ -99,9 +105,9 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
                 data_list_temp.append(temp)
         data_list = data_list_temp
         leftover_problems = data_list
-        #tqdm.write(f"correct overall: {len(result_overall[i])}") # record 
+        tqdm.write(f"correct overall: {len(result_overall[i])}") # record 
         # print("leftover in this epoch:" + str(len(leftover_problems[i])))
-        #tqdm.write(f"leftover in this epoch: {len(data_list)}")
+        tqdm.write(f"leftover in this epoch: {len(data_list)}")
         #pbar.update(i)
         loop.close()
     
@@ -161,7 +167,7 @@ if __name__ == '__main__':
     # print("Accuracies: ", [round(accuracies[i] * 100 / len(data_list), 1) for i in range(iterations)])
     print("Total TIME: ", time.time() - start_time)
     
-    output_file = "mmlu_70B_3.3_all_results.txt"  # Specify the output file name
+    output_file = "gpqa31_405B_outcome.txt"  # Specify the output file name
 
     # Calculate the accuracies
     accuracies_list = [round(sum([accuracies[j] for j in range(i + 1)]) * 100 / len(data_list), 1) for i in range(iterations)]
