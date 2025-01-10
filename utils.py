@@ -121,16 +121,16 @@ def get_previous(dataset_name, data):
     elif dataset_name == "mmlu":
         previous = "Question: " + data['question'] + "\nChoices: "
         for i in range(len(data['choices'])):
-            previous += chr(ord('A') + i) + " - " + data['choices'][i] + " "
-        previous = previous[:-1] + '\nAnswer:'
+            previous += f"({chr(ord('A') + i)}) " + data['choices'][i] + "\n"
+        previous += "Answer:"
         # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['choices']) + '\nAnswer:'
         return previous
     elif dataset_name == "mmlu_pro":
         
         previous = "Question: " + data['question'] + "\nChoices: "
         for i in range(len(data['options'])):
-            previous += chr(ord('A') + i) + " - " + data['options'][i] + " "
-        previous = previous[:-1] + '\nAnswer:'
+            previous += f"({chr(ord('A') + i)}) " + data['options'][i] + "\n"
+        previous += "Answer: "
         
         # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['options']) + '\nAnswer:'
         return previous
@@ -208,8 +208,8 @@ def get_demonstrations(dataset_name, category):
                 "content": data['question'] + "\n\nChoices: " + '\n'.join(data["choices"])
             }
             for j in range(len(rand_list_from_train[i]['choices'])):
-                d['content'] += chr(ord('A') + j) + " - " + rand_list_from_train[i]['choices'][j] + " "
-            d['content'] = d['content'][:-1] + '\nAnswer:'
+                d['content'] += f"({chr(ord('A') + i)}) " + rand_list_from_train[i]['choices'][j] + "\n"
+            d['content'] = d['content'] + 'Answer: '
             l.append(d)
             num = data['answer']
             idx_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
@@ -228,8 +228,11 @@ def get_demonstrations(dataset_name, category):
         for i in range(5):
             d = {"role": "user", "content": "Question: " + data_list[i]['question'] + "\nChoices: "}
             for j in range(len(data_list[i]['options'])):
-                d['content'] += chr(ord('A') + j) + " - " + data_list[i]['options'][j] + " "
-            d['content'] = d['content'][:-1] + '\nAnswer:'
+                d['content'] +=  f"({chr(ord('A') + i)}) " + data_list[i]['options'][j] + "\n"
+            d['content'] = d['content'] + 'Answer: '
+            # for i in range(len(data['options'])):
+            #    previous += f"({chr(ord('A') + i)}) " + data['options'][i] + "\n"
+            # previous += "Answer:
             messages_mmlu_pro.append(d)
             cot_reasoning = data_list[i]["cot_content"].replace("A: ", "")
             # cot_reasoning_splits = cot_reasoning.split(". ")
