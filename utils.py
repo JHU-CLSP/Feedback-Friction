@@ -58,11 +58,47 @@ def setup_datalist(dataset_name, mode="test"):
             return data_list
         elif mode == "train":
             return triviaqa_datalist
-    elif dataset_name == "gpqa":
-        ds = datasets.load_dataset("Idavidrein/gpqa", 'gpqa_diamond')
+    elif dataset_name == "mmlu": # adding mmlu dataset
+        ds = datasets.load_dataset("cais/mmlu", "all")
+        data_list = list(ds['test'])
+        global mmlu_datalist_all
+        """
+        mmlu_datalist_all = list(ds['auxiliary_train'])
+        if mode == "test":
+            return data_list
+        elif mode == "train":
+            return mmlu_datalist_all
+        """
+        mmlu_datalist_all = {}
+        mmlu_datalist_all_ls = list(ds['validation'])
+        for data in mmlu_datalist_all_ls:
+            if data['subject'] not in mmlu_datalist_all:
+                mmlu_datalist_all[data['subject']] = []
+            mmlu_datalist_all[data['subject']].append(data)
+        if mode == "test":
+            return data_list # all test data
+        elif mode == "train":
+            return mmlu_datalist_all 
+        
+    elif dataset_name == "mmlu_pro":
+        ds = datasets.load_dataset("TIGER-Lab/MMLU-Pro")
+        data_list = list(ds['test'])
+        global mmlu_datalist
+        mmlu_datalist = {}
+        validation_list = list(ds['validation'])
+        for data in validation_list:
+            if data['category'] not in mmlu_datalist:
+                mmlu_datalist[data['category']] = []
+            mmlu_datalist[data['category']].append(data)
+        if mode == "test":
+            return data_list # all test data
+        elif mode == "train":
+            return mmlu_datalist # a dictionary that contains 12 subcategories with 5 questoins in each 
+    elif dataset_name == "gpqa": # revised
+        ds = datasets.load_dataset("jeggers/gpqa_formatted", 'diamond')
         data_list = list(ds['train'])
         global gpqa_datalist
-        gpqa_datalist = list(datasets.load_dataset("Idavidrein/gpqa", 'gpqa_main')['train'])
+        gpqa_datalist = list(datasets.load_dataset("jeggers/gpqa_formatted", 'main')['train'])
         return data_list
         
 
@@ -82,11 +118,33 @@ def get_previous(dataset_name, data):
         return data['problem']
     elif dataset_name == "trivia_qa":
         return data['question']
-    elif dataset_name == "gpqa":
-        return data['Question']
+    elif dataset_name == "mmlu":
+        previous = "Question: " + data['question'] + "\nChoices: "
+        for i in range(len(data['choices'])):
+            previous += f"({chr(ord('A') + i)}) " + data['choices'][i] + "\n"
+        previous += "Answer:"
+        # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['choices']) + '\nAnswer:'
+        return previous
+    elif dataset_name == "mmlu_pro":
+        
+        previous = "Question: " + data['question'] + "\nChoices: "
+        for i in range(len(data['options'])):
+            previous += f"({chr(ord('A') + i)}) " + data['options'][i] + "\n"
+        previous += "Answer: "
+        
+        # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['options']) + '\nAnswer:'
+        return previous
+    elif dataset_name == "gpqa": #revised
+        
+        previous = "Question: " + data['Question'] + "\nChoices:\n"
+        for i in range(len(data['options'])):
+            previous += f"({chr(ord('A') + i)}) " + data['options'][i] + "\n"
+        previous += "Answer:"
+        
+        return previous
 
 
-def get_demonstrations(dataset_name):
+def get_demonstrations(dataset_name, category):
     if dataset_name == "gsm8k":
         messages_gsm8k = []
         rand_list_from_train = np.random.choice(gsm8k_datalist, 9, replace=False)
@@ -136,15 +194,64 @@ def get_demonstrations(dataset_name):
             l.append({"role": "assistant", "content": data['answer']["normalized_aliases"][0]})
             messages_triviaqa.extend(l)
         return messages_triviaqa
-    elif dataset_name == "gpqa":
-        messages_gpqa = [{"role": "system", "content": "Think through the problem step by step. When ready, format your answer as: [Your reasoning]. \n\nThe answer is: [your conclusion]"}]
-        rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
-        for data in rand_list_from_train:
+    elif dataset_name == "mmlu": 
+        messages_mmlu = [{
+            "role": "system",
+            "content": "The following are multiple-choice questions (with answers) about " + category + ". Let's think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
+        }] # same way for extract the answer
+        rand_list_from_train = np.random.choice(mmlu_datalist_all[category], 5, replace=False)
+        i = 0
+        for data in rand_list_from_train: # since no cot content exists, we just use answer
             l = []
-            d = {"role": "user", "content": data['Question']}
+            d = {
+                "role": "user",
+                "content": data['question'] + "\n\nChoices: " + '\n'.join(data["choices"])
+            }
+            for j in range(len(rand_list_from_train[i]['choices'])):
+                d['content'] += f"({chr(ord('A') + i)}) " + rand_list_from_train[i]['choices'][j] + "\n"
+            d['content'] = d['content'] + 'Answer: '
             l.append(d)
-            l.append({"role": "assistant", "content": data['Explanation'] + "\n\nThe answer is: " + data['Correct Answer']})
-            messages_gpqa.extend(l)
+            num = data['answer']
+            idx_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+            ans_num = idx_letter[num]
+            l.append({"role": "assistant", "content": "The answer is " + "(" + ans_num + ")"})
+            messages_mmlu.extend(l)
+            i += 1
+        # print(messages_mmlu)
+        return messages_mmlu
+    elif dataset_name == "mmlu_pro":
+        messages_mmlu_pro = [{
+            "role": "system",
+            "content": "The following are multiple-choice questions (with answers) about " + category + ". Let's think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
+        }]
+        data_list = np.random.choice(mmlu_datalist[category], 5, replace=False)
+        for i in range(5):
+            d = {"role": "user", "content": "Question: " + data_list[i]['question'] + "\nChoices: "}
+            for j in range(len(data_list[i]['options'])):
+                d['content'] +=  f"({chr(ord('A') + i)}) " + data_list[i]['options'][j] + "\n"
+            d['content'] = d['content'] + 'Answer: '
+            # for i in range(len(data['options'])):
+            #    previous += f"({chr(ord('A') + i)}) " + data['options'][i] + "\n"
+            # previous += "Answer:
+            messages_mmlu_pro.append(d)
+            cot_reasoning = data_list[i]["cot_content"].replace("A: ", "")
+            # cot_reasoning_splits = cot_reasoning.split(". ")
+            # for cot_reasoning_split in cot_reasoning_splits:
+            #     messages_mmlu_pro.append({"role": "assistant", "content": cot_reasoning_split})
+            messages_mmlu_pro.append({"role": "assistant", "content": cot_reasoning})
+        return messages_mmlu_pro
+    elif dataset_name == "gpqa":# revise 0 shots
+        messages_gpqa = [{
+            "role": "system",
+            "content": "The following are multiple-choice questions. Please think step by step. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
+        }]
+        # rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
+        # for data in rand_list_from_train:
+        #    l = []
+        #    d = {"role": "user", "content": data['Question']}
+        #    l.append(d)
+        #    l.append({"role": "assistant", "content": data['Explanation'] + "\n\nThe answer is: " + data['Correct Answer']})
+        #    messages_gpqa.extend(l)
         return messages_gpqa
 
 
@@ -163,12 +270,22 @@ def get_normalized_answer(dataset_name, data):
         return res
     elif dataset_name == "trivia_qa":
         return data['answer']["normalized_value"]
-    elif dataset_name == "gpqa":
-        return data['Correct Answer']
+    elif dataset_name == "mmlu":
+        number = data['answer']
+        index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+        ans = index_to_letter[number]
+        return ans # get a letter output
+    elif dataset_name == "mmlu_pro":
+        return data['answer']
+    elif dataset_name == "gpqa": #revised
+        number = data['answer']
+        index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+        ans = index_to_letter[number]
+        return ans # get a letter output
 
 
 def get_dataset_key(dataset_name):
-    if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "gsm8k" or dataset_name == "mmlu_pro":
+    if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "gsm8k" or dataset_name == "mmlu" or dataset_name == "mmlu_pro":
         return "question"
     elif dataset_name == "math":
         return "problem"
@@ -187,8 +304,18 @@ def get_process_answer(dataset_name, data):
         return data["solution"]
     elif dataset_name == "trivia_qa":
         return data['answer']["normalized_value"]
-    elif dataset_name == "gpqa":
-        return data["Explanation"]
+    elif dataset_name == "mmlu":
+        number = data['answer'] # map numbers to letters
+        index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+        ans = index_to_letter[number]
+        return ans # get a letter output
+    elif dataset_name == "mmlu_pro":
+        return data['answer']
+    elif dataset_name == "gpqa": #revised
+        number = data['answer'] # map numbers to letters
+        index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
+        ans = index_to_letter[number]
+        return ans # get a letter output
 
 
 def get_normalized_prediction(dataset_name, prediction):
@@ -206,23 +333,46 @@ def get_normalized_prediction(dataset_name, prediction):
         return res
     elif dataset_name == "trivia_qa":
         return normalize_answer(prediction)
+    elif dataset_name == "mmlu": # extract the formated answer since we have the same prompt as mmlu_pro
+        regex1 = re.compile("answer is \(?\([A-D]\)?\)") 
+        if regex1.search(prediction):
+            return regex1.search(prediction).group().split('(')[1][0]
+        regex2 = re.compile("\.*\[aA\]nswer:\s*\([A-D]\)")
+        if regex2.search(prediction):
+            return regex2.search(prediction).group().split('(')[1][0]
+        regex3 = re.compile("answer is \(?[A-J]\)?", re.IGNORECASE)
+        if (match := regex3.search(prediction)):
+            return match.group(1)
+        return random.choice(['A', 'B', 'C', 'D']) # answer not found then random
+    elif dataset_name == "mmlu_pro": # extract the formated answer
+        regex1 = re.compile("answer is \(?\([A-J]\)?\)") 
+        if regex1.search(prediction):
+            return regex1.search(prediction).group().split('(')[1][0]
+        regex2 = re.compile("\.*\[aA\]nswer:\s*\([A-J]\)")
+        if regex2.search(prediction):
+            return regex2.search(prediction).group().split('(')[1][0]
+        regex3 = re.compile("answer is \(?[A-J]\)?", re.IGNORECASE) # if no () exists and also case not sensitive, please double check
+        if (match := regex3.search(prediction)): # directly return the macthed result
+            return match.group(1)
+        return random.choice(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) # answer not found then random
     elif dataset_name == "gpqa":
-        return prediction.strip()
-    
+        #return prediction.strip() #revised
+        regex1 = re.compile("answer is \(?\([A-D]\)?\)") 
+        if regex1.search(prediction):
+            return regex1.search(prediction).group().split('(')[1][0]
+        regex2 = re.compile("\.*\[aA\]nswer:\s*\([A-D]\)")
+        if regex2.search(prediction):
+            return regex2.search(prediction).group().split('(')[1][0]
+        regex3 = re.compile("answer is \(?[A-J]\)?", re.IGNORECASE)
+        if (match := regex3.search(prediction)):
+            return match.group(1)
+        return random.choice(['A', 'B', 'C', 'D']) # answer not found then random
 
 def flatten_list(new_messages):
     messages = []
     for message in new_messages:
         messages.append(message["role"] + ": " + message["content"])
     return "\n".join(messages)
-
-
-def generate_question(dataset, data):
-    if dataset == "arc":
-        question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
-    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k" or dataset == "gpqa":
-        question = data[get_dataset_key(dataset)]
-    return question
 
 
 def is_equivalent(dataset, item, data):
@@ -236,7 +386,7 @@ def is_equivalent(dataset, item, data):
         except:
             return False
         return False
-    elif dataset == "arc" or dataset == "gsm8k" or dataset == "gpqa" or dataset == "mmlu_pro":
+    elif dataset == "arc" or dataset == "gsm8k" or dataset == "trivia_qa" or dataset == "gpqa" or dataset == "mmlu_pro" or dataset == "mmlu":
         if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
             return True
         else:
@@ -250,7 +400,7 @@ def is_equivalent(dataset, item, data):
 
 def get_normalized_predictions(dataset, response_list):
     normalized_prediction_list = []
-    if dataset == "gsm8k" or dataset == "gpqa":
+    if dataset == "gsm8k": # or dataset == "gpqa"
         for term in gsm8k_list_of_end_prompts:
             try:
                 for response in response_list:
@@ -275,6 +425,22 @@ def get_normalized_predictions(dataset, response_list):
                 normalized_prediction_list.append(normalized_prediction)
             except Exception as e:
                 print(e)
+                print("Error")
+    elif dataset == "mmlu_pro":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "mmlu" or dataset == "gpqa":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
                 print("Error")
     return normalized_prediction_list
 
@@ -345,5 +511,99 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     # )
     
     return agent_response
+
+def mask_answer_in_string(input_string, ground_truth):
+    ground_truth_str = str(ground_truth)
+    masked_string = re.sub(rf'\b{ground_truth_str}\b', '<answer masked>', input_string)
+    return masked_string
+
+def check_if_ground_truth_exists(input_string, ground_truth):
+    # return True if ground truth exists
+    ground_truth_str = str(ground_truth)
+    match = re.search(rf'\b{ground_truth_str}\b', input_string)
+    return match is not None
+
+def check_if_ground_truth_exists_mcq(input_string, ground_truth):
+    # Convert ground truth to a string
+    ground_truth_str = str(ground_truth)
+    # Match the ground truth letter surrounded by parentheses
+    match = re.search(rf'\({ground_truth_str}\)', input_string)
+    return match is not None
+
+
+def extract_predictions(dataset, response_list):
+    normalized_prediction_list = []
+    if dataset == "gsm8k":
+        for term in gsm8k_list_of_end_prompts:
+            try:
+                for response in response_list:
+                    if term in response:
+                        prediction = response.split(term)[1].replace('\n', ' ').strip()
+                        normalized_prediction = get_normalized_prediction(dataset, prediction)
+                        if normalized_prediction == "":
+                            pass
+                        else:
+                            normalized_prediction_list.append(normalized_prediction)
+                            break
+                if len(normalized_prediction_list) != 0:
+                    break
+            except:
+                print("Error")
+    elif dataset == "math":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "arc":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = prediction
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "trivia_qa":
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "mmlu" or dataset == "gpqa": # try revised
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    elif dataset == "mmlu_pro": # try
+        for response in response_list:
+            try:
+                prediction = response
+                normalized_prediction = get_normalized_prediction(dataset, prediction)
+                normalized_prediction_list.append(normalized_prediction)
+            except:
+                print("Error")
+    return normalized_prediction_list
+
+
+def generate_question(dataset, data): # possible revision
+    # get previous is used for prompting the model while generate_question is used for record the question
+    if dataset == "arc":
+        question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
+    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k": # or dataset == "gpqa"
+        question = data[get_dataset_key(dataset)]
+    elif dataset == "mmlu":
+        question = data[get_dataset_key(dataset)]  + "\nChoices: " + '\n'.join(data['choices'])
+    elif dataset == "mmlu_pro":
+        question = data[get_dataset_key(dataset)]  + "\nChoices: " + '\n'.join(data['options'])
+    elif dataset == "gpqa":
+        question = data[get_dataset_key(dataset)]  + "\nChoices: " + '\n'.join(data['options'])
+    return question
 
 
