@@ -11,7 +11,7 @@ import asyncio
 import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
-from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, check_if_ground_truth_exists
+from utils import call_vllm_server, generate_question, get_process_answer
 from database import RedisCache
 
 
