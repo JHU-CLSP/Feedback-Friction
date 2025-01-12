@@ -33,6 +33,16 @@ def setup_datalist(dataset_name, mode="test"):
             return data_list
         elif mode == "train":
             return gsm8k_datalist
+    elif dataset_name == "gsm8k_symbolic":
+        ds = datasets.load_dataset("apple/GSM-Symbolic", name="main")
+        data_list = list(ds['test'])
+        global gsm8k_symbolic_datalist
+        ds_gsm8k = datasets.load_dataset("gsm8k", 'main')
+        gsm8k_symbolic_datalist = list(ds_gsm8k['test'])
+        if mode == "test":
+            return data_list
+        elif mode == "train":
+            return gsm8k_symbolic_datalist
     elif dataset_name == "math":
         ds = datasets.load_dataset("lighteval/MATH", 'all')
         data_list = list(ds['test'])
@@ -74,7 +84,7 @@ def get_previous(dataset_name, data):
         # previous = previous[:-1] + '\nAnswer:'
         previous = data['question'] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
         return previous
-    elif dataset_name == "gsm8k":
+    elif dataset_name == "gsm8k" or dataset_name == "gsm8k_symbolic":
         previous = "Question: " + data['question'] + '\nAnswer: '
         return previous
     elif dataset_name == "math":
@@ -105,6 +115,24 @@ def get_demonstrations(dataset_name):
             l.append({"role": "assistant", "content": data['answer']})
             messages_gsm8k.extend(l)
         return messages_gsm8k
+    elif dataset_name == "gsm8k_symbolic":
+        messages_gsm8k_symbolic = []
+        rand_list_from_train = np.random.choice(gsm8k_symbolic_datalist, 9, replace=False)
+        for data in rand_list_from_train:
+            l = []
+            d = {"role": "user", "content": "Question: " + data['question'] + "\nAnswer:"}
+            l.append(d)
+            data['answer'] = data['answer'].replace("####", "The answer is:")
+            answers = data['answer'].split("\n")
+            # for answer in answers:
+            #     if answer == "":
+            #         continue
+            #     if not answer.endswith("."):
+            #         answer = answer + "."
+            #     l.append({"role": "assistant", "content": answer})
+            l.append({"role": "assistant", "content": data['answer']})
+            messages_gsm8k_symbolic.extend(l)
+        return messages_gsm8k_symbolic
     elif dataset_name == "math":
         messages_math = [{"role": "system", "content": "You are a smart assistant that solves math problems. Please think step by step to solve the problem. If you think you're ready to output the answer, you can wrap your answer with \\boxed{}. Please follow this format"}]
         # messages_math.append({"role": "user", "content": "Find the domain of the expression  $\\frac{\\sqrt{x-2}}{\\sqrt{5-x}}$."})
@@ -151,7 +179,7 @@ def get_demonstrations(dataset_name):
 def get_normalized_answer(dataset_name, data):
     if dataset_name == "arc" or dataset_name == "ecqa":
         return data['answerKey']
-    elif dataset_name == "gsm8k":
+    elif dataset_name == "gsm8k" or dataset_name == "gsm8k_symbolic":
         return extract_and_convert_number_real(data['answer'].split("####")[1].strip())
     elif dataset_name == "math":
         solution = data['solution']
@@ -168,7 +196,7 @@ def get_normalized_answer(dataset_name, data):
 
 
 def get_dataset_key(dataset_name):
-    if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "gsm8k" or dataset_name == "mmlu_pro":
+    if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "gsm8k" or dataset_name == "mmlu_pro" or dataset_name == "gsm8k_symbolic":
         return "question"
     elif dataset_name == "math":
         return "problem"
@@ -181,7 +209,7 @@ def get_dataset_key(dataset_name):
     
 
 def get_process_answer(dataset_name, data):
-    if dataset_name == "gsm8k":
+    if dataset_name == "gsm8k" or dataset_name == "gsm8k_symbolic":
         return data['answer']
     elif dataset_name == "math":
         return data["solution"]
@@ -195,7 +223,7 @@ def get_normalized_prediction(dataset_name, prediction):
     if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "proofwriter":
         normalized_prediction = prediction.strip().replace(": ", "")
         return normalized_prediction
-    elif dataset_name == "gsm8k":
+    elif dataset_name == "gsm8k" or dataset_name == "gsm8k_symbolic":
         return extract_and_convert_number_real(prediction)
     elif dataset_name == "math":
         res = remove_boxed(last_boxed_only_string(prediction))
@@ -220,7 +248,7 @@ def flatten_list(new_messages):
 def generate_question(dataset, data):
     if dataset == "arc":
         question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
-    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k" or dataset == "gpqa":
+    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k" or dataset == "gpqa" or dataset == "gsm8k_symbolic":
         question = data[get_dataset_key(dataset)]
     return question
 
@@ -236,7 +264,7 @@ def is_equivalent(dataset, item, data):
         except:
             return False
         return False
-    elif dataset == "arc" or dataset == "gsm8k" or dataset == "gpqa" or dataset == "mmlu_pro":
+    elif dataset == "arc" or dataset == "gsm8k" or dataset == "gpqa" or dataset == "mmlu_pro" or dataset == "gsm8k_symbolic":
         if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
             return True
         else:
@@ -250,7 +278,7 @@ def is_equivalent(dataset, item, data):
 
 def get_normalized_predictions(dataset, response_list):
     normalized_prediction_list = []
-    if dataset == "gsm8k" or dataset == "gpqa":
+    if dataset == "gsm8k" or dataset == "gpqa" or dataset == "gsm8k_symbolic":
         for term in gsm8k_list_of_end_prompts:
             try:
                 for response in response_list:
@@ -287,7 +315,7 @@ def check_if_ground_truth_exists(input_string, ground_truth):
     return match is not None
 
 
-async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None):
+async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None, logprobs=None):
     if n != 1:
         raise ValueError("n must be 1")
     # res = list(cache.search(
@@ -309,7 +337,7 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
         "stop_token_ids": [128001, 128009, tokenizer.eos_token_id],
         "best_of": n,
         "n": n,
-        "logprobs": 1,
+        "logprobs": logprobs,
         "seed": 14,
         "chat_template": tokenizer.chat_template
     }
@@ -328,9 +356,14 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
                 print("Error in calling remote agent server")
     
     try:
+        if logprobs is not None:
+            prob = sum(item["logprob"] for item in agent_response['choices'][0]['logprobs']['content'][:-1]) / (len(agent_response['choices'][0]['logprobs']['content']) - 1)
+        else:
+            prob = None
         agent_response = agent_response['choices'][0]['message']['content']
     except:
         agent_response = ""
+        prob = None
     # Store responses
     if type is None or dataset is None or round is None:
         raise ValueError("Type or dataset is None")
@@ -344,6 +377,6 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     #     round=round
     # )
     
-    return agent_response
+    return (agent_response, prob)
 
 

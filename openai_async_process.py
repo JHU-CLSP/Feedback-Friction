@@ -25,6 +25,7 @@ iterations = 10
 use_feedback = False
 use_process_feedback = False
 np.random.seed(14)
+logprobs = None
 
 
 async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokenizer=None, temperature=0.0, n=1, round=0):
@@ -38,7 +39,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         "content": previous
     })
     
-    agent_response = await call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type="answer", dataset=dataset, round=round)
+    agent_response, agent_response_probs = await call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type="answer", dataset=dataset, round=round, logprobs=logprobs)
 
     response_list = []
     response_list.append(agent_response)
@@ -51,24 +52,25 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
             else:
                 # also provide ground-truth answer trajectory
                 feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving out the correct final answer: "}]
-            feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+            feedback, feedback_probs = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             # feedback = mask_answer_in_string(feedback, get_normalized_answer(dataset, data))
             if check_if_ground_truth_exists(feedback, get_normalized_answer(dataset, data)):
                 feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
-                feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+                feedback, feedback_probs = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
 
     d = {
         "question": generate_question(dataset, data),
         "normalized_answer": get_normalized_answer(dataset, data),
         "normalized_prediction": normalized_prediction_list,
         "full_response": response_list,
-        "feedback": feedback
+        "feedback": feedback,
+        "response_probs": agent_response_probs
     }
     pbar.update(1)
     return d
 
 def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
-    result_overall, leftover_problems = [[] for _ in range(iterations)], None
+    result_overall, leftover_problems = [[] for _ in range(iterations)], []
     for i in range(iterations):
         pbar = tqdm(total=len(data_list))
         loop = asyncio.get_event_loop()
@@ -78,12 +80,19 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
         tasks = [loop.create_task(get_response(data, pbar, agent_model, dataset, tokenizer, temperature, n, i)) for data in data_list]
         result = loop.run_until_complete(asyncio.gather(*tasks))
         data_list_temp = []
+        leftover_problems = []
         for j in range(len(data_list)):
             item = result[j]
             # if len(item["normalized_prediction"]) >= 1 and item["normalized_answer"] == item["normalized_prediction"][0]:
+            for key in data_list[j]:
+                if key not in item:
+                    item[key] = data_list[j][key]
             if len(item["normalized_prediction"]) >= 1 and is_equivalent(dataset, item, data_list[j]):
+                item["is_correct"] = True
                 result_overall[i].append(item)
             else:
+                item["is_correct"] = False
+                result_overall[i].append(item)
                 temp = data_list[j]
                 if use_feedback:
                     temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect.\n" + "Here is some feedback: " + item["feedback"] + "\nAnswer the question again.\n"
@@ -91,7 +100,6 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
                     temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect. Answer the question again.\n"
                 data_list_temp.append(temp)
         data_list = data_list_temp
-        leftover_problems = data_list
         loop.close()
     
     return result_overall, leftover_problems
@@ -113,6 +121,7 @@ if __name__ == '__main__':
     parser.add_argument("--use_feedback", action="store_true", help="Use feedback for the model")
     parser.add_argument("--iterations", type=int, default=10, help="Number of iterations")
     parser.add_argument("--use_process_feedback", action="store_true", help="Use process feedback")
+    parser.add_argument("--logprobs", type=int, default=None, help="Logprobs to use for the model")
     
     # prepare the arguments
     args = parser.parse_args()
@@ -127,19 +136,25 @@ if __name__ == '__main__':
     use_feedback = args.use_feedback
     iterations = args.iterations
     use_process_feedback = args.use_process_feedback
+    logprobs = args.logprobs
     data_list = setup_datalist(args.dataset, mode=split)
     data_list = data_list[:int(len(data_list) * float(args.proportion))]
     tokenizer = AutoTokenizer.from_pretrained(agent_model)
     chunks = [data_list[x:x+500] for x in range(0, len(data_list), 500)]
+    # chunks = [chunks[0]]
     accuracies = [0 for _ in range(iterations)]
     
     # running and post-training statistics collection
     for chunk in chunks:
         result, leftover_problems = apply_async(chunk, agent_model, dataset, tokenizer, temperature, n)
         for i in range(iterations):
-            accuracies[i] += len(result[i])
-        for d in leftover_problems:
-            write_file.write(json.dumps(d) + '\n')
+            accuracies[i] += len([item for item in result[i] if item["is_correct"]])
+            for data in result[i]:
+                data["iteration"] = i
+                write_file.write(json.dumps(data) + '\n')
+        # for d in leftover_problems:
+        #     d["iteration"] = iterations
+        #     write_file.write(json.dumps(d) + '\n')
     write_file.close()
     # print the results that's the sum of the accuracies
     print("Accuracies: ", [round(sum([accuracies[j] for j in range(i + 1)]) * 100 / len(data_list), 1) for i in range(iterations)])
