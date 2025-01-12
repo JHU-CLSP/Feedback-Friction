@@ -104,12 +104,24 @@ def setup_datalist(dataset_name, mode="test"):
             return data_list # all test data
         elif mode == "train":
             return mmlu_datalist # a dictionary that contains 12 subcategories with 5 questoins in each 
-    elif dataset_name == "gpqa": # revised
-        ds = datasets.load_dataset("jeggers/gpqa_formatted", 'diamond')
-        data_list = list(ds['train'])
+    elif dataset_name == "gpqa": # revised for adding the 'Explanation' field into the reformatted dataset
+        original_dataset = datasets.load_dataset("Idavidrein/gpqa", "gpqa_diamond")
+        formatted_dataset = datasets.load_dataset("jeggers/gpqa_formatted", 'diamond')
+        original_data_list = list(original_dataset['train'])
+        formatted_data_list = list(formatted_dataset['train'])
+
+        original_mapping = {item['Question']: item.get('Explanation', None) for item in original_data_list}
+        # Add the "Explanation" field to the formatted dataset
+        for entry in formatted_data_list:
+            entry_id = entry['Question']
+            if entry_id in original_mapping:
+                entry['Explanation'] = original_mapping[entry_id]
+        # ds = datasets.load_dataset("jeggers/gpqa_formatted", 'diamond')
+        # data_list = list(ds['train'])
         global gpqa_datalist
         gpqa_datalist = list(datasets.load_dataset("jeggers/gpqa_formatted", 'main')['train'])
-        return data_list
+        return formatted_data_list
+
         
 
 def get_previous(dataset_name, data):
@@ -309,6 +321,7 @@ def get_normalized_answer(dataset_name, data):
         number = data['answer']
         index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
         ans = index_to_letter[number]
+        # final_ans = "The answer is: " + ans + ". The explanation is: " + data['Explanation'] # using the Explanation for Answer + Solution feedback (buggy)
         return ans # get a letter output
 
 
@@ -550,6 +563,12 @@ def mask_answer_in_string(input_string, ground_truth):
     masked_string = re.sub(rf'\b{ground_truth_str}\b', '<answer masked>', input_string)
     return masked_string
 
+def mask_answer_in_string_mcq(input_string, ground_truth): # possible to use if we cannot eliminate leak of answer choice
+    ground_truth_str = re.escape(str(ground_truth))
+    pattern = rf'\(\s*{ground_truth_str}\s*\)'
+    masked_string = re.sub(pattern, '<answer masked>', input_string)
+    return masked_string
+
 def check_if_ground_truth_exists(input_string, ground_truth):
     # return True if ground truth exists
     ground_truth_str = str(ground_truth)
@@ -557,9 +576,16 @@ def check_if_ground_truth_exists(input_string, ground_truth):
     return match is not None
 
 def check_if_ground_truth_exists_mcq(input_string, ground_truth):
-    # Convert ground truth to a string
+
     ground_truth_str = str(ground_truth)
-    # Match the ground truth letter surrounded by parentheses
+    # debug stuff, not useful now
+    if input_string is None:
+        print("input_string is None")
+        return False
+    elif not isinstance(input_string, str):
+        print(f"input_string is not of type str: {type(input_string)}")
+        return False
+
     match = re.search(rf'\({ground_truth_str}\)', input_string)
     return match is not None
 

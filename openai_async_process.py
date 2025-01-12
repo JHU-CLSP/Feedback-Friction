@@ -59,12 +59,12 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
             feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             # feedback = mask_answer_in_string(feedback, get_normalized_answer(dataset, data))
             # enhance inference time
-            if dataset != "mmlu" and dataset != "mmlu_pro" and dataset != "gpqa":
-                if check_if_ground_truth_exists(feedback, get_normalized_answer(dataset, data)):
+            if dataset != "mmlu" and dataset != "mmlu_pro" and dataset != "gpqa": # revisied to get the feedback
+                if check_if_ground_truth_exists(feedback[0], get_normalized_answer(dataset, data)):
                     feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
                     feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             else:
-                if check_if_ground_truth_exists_mcq(feedback, get_normalized_answer(dataset, data)):
+                if check_if_ground_truth_exists_mcq(feedback[0], get_normalized_answer(dataset, data)):
                     feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer WITHOUT DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
                     feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
 
@@ -108,7 +108,7 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
                 temp = data_list[j]
                 if use_feedback:
                     # print(item["full_response"])
-                    temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect.\n" + "Here is some feedback: " + item["feedback"] + "\nAnswer the question again.\n"
+                    temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect.\n" + "Here is some feedback: " + item["feedback"][0] + "\nAnswer the question again.\n"
                 else:
                     temp[get_dataset_key(dataset)] = data_list[j][get_dataset_key(dataset)] + "\n\nPrevious Answer: " + item["full_response"][0] + "\n\n" + "Your previous answer is incorrect. Answer the question again.\n"
                 data_list_temp.append(temp)
