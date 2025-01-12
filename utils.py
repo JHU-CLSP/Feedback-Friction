@@ -356,7 +356,9 @@ def get_process_answer(dataset_name, data):
         number = data['answer'] # map numbers to letters
         index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
         ans = index_to_letter[number]
-        return ans # get a letter output
+        final_ans = "The answer is: " + ans + ". The explanation is: " + data['Explanation'] # use this if we use feedback with solution
+        # return ans # otherwise we directly give the answer
+        return final_ans # get a letter output
 
 
 def get_normalized_prediction(dataset_name, prediction):
