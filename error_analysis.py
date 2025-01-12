@@ -16,7 +16,7 @@ from database import RedisCache
 
 
 # Connect to your local Redis
-cache = None #RedisCache(host='localhost', port=6379)
+cache = RedisCache(host='localhost', port=6379)
 base_url = ['http://c002']
 ports = [1233, 1234, 1235, 1236]
 gsm8k_datalist = None
@@ -109,7 +109,7 @@ if __name__ == '__main__':
     parser.add_argument("--dataset", type=str, default="math", help="dataset to test with")
     parser.add_argument("--agent_model", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct", help="Agent model to use for generating responses")
     parser.add_argument("--write_file", type=str, default="output_arc.jsonl", help="File to write the output to")
-    parser.add_argument("--base_url", type=str, default="http://c015", help="Base URL to use for the agent server")
+    parser.add_argument("--base_url", type=str, default="http://h15", help="Base URL to use for the agent server")
     parser.add_argument("--ports", type=str, default="1233_1234_1235_1236", help="Base URL to use for the agent server")
     parser.add_argument("--temperature", type=str, default="0.0", help="Base temperature to use for inference")
     parser.add_argument("--n", type=str, default="1", help="Base best_of n to use for inference")
@@ -149,5 +149,5 @@ if __name__ == '__main__':
     print("Categories percentage: ", {k: round(v * 100 / len(data_list), 1) for k, v in category_map.items()})
     # print("Accuracies: ", [round(accuracies[i] * 100 / len(data_list), 1) for i in range(iterations)])
     print("Total TIME: ", time.time() - start_time)
-    print("Total TIME: ", time.time() - start_time)
+
 

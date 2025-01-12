@@ -16,7 +16,7 @@ from database import RedisCache
 
 
 # Connect to your local Redis
-cache = None# RedisCache(host='localhost', port=6379, db=0) # try other db=1 on 6379 use 0 for default
+cache = RedisCache(host='localhost', port=6379, db=0) # try other db=1 on 6379 use 0 for default
 base_url = ['http://c004']
 ports = [1233, 1234, 1235, 1236]
 gsm8k_datalist = None
@@ -54,7 +54,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                 feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
             else:
                 # also provide ground-truth answer trajectory
-                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving out the correct final answer: "}]
+                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer WITHOUT DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
             feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             # feedback = mask_answer_in_string(feedback, get_normalized_answer(dataset, data))
             # enhance inference time
@@ -64,9 +64,10 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                     feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
             else:
                 if check_if_ground_truth_exists_mcq(feedback, get_normalized_answer(dataset, data)):
-                    feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
+                    feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer WITHOUT DIRECTLY PROVIDING THE CORRECT FINAL ANSWER: "}]
                     feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
-  
+
+                        
     d = {
         "question": generate_question(dataset, data),
         "normalized_answer": get_normalized_answer(dataset, data),
@@ -108,7 +109,7 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
         tqdm.write(f"correct overall: {len(result_overall[i])}") # record 
         # print("leftover in this epoch:" + str(len(leftover_problems[i])))
         tqdm.write(f"leftover in this epoch: {len(data_list)}")
-        #pbar.update(i)
+        # pbar.update(i)
         loop.close()
     
     return result_overall, leftover_problems
@@ -166,18 +167,4 @@ if __name__ == '__main__':
     print("Accuracies: ", [round(sum([accuracies[j] for j in range(i + 1)]) * 100 / len(data_list), 1) for i in range(iterations)])
     # print("Accuracies: ", [round(accuracies[i] * 100 / len(data_list), 1) for i in range(iterations)])
     print("Total TIME: ", time.time() - start_time)
-    
-    output_file = "gpqa31_405B_outcome.txt"  # Specify the output file name
-
-    # Calculate the accuracies
-    accuracies_list = [round(sum([accuracies[j] for j in range(i + 1)]) * 100 / len(data_list), 1) for i in range(iterations)]
-
-    # Calculate total time
-    total_time = time.time() - start_time
-
-    # Write results to the file
-    with open(output_file, "w") as file:  # Use "a" if you want to append to the file
-        file.write(f"Accuracies: {accuracies_list}\n")
-        file.write(f"Total TIME: {total_time:.2f} seconds\n")
-
 

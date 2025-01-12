@@ -197,7 +197,7 @@ def get_demonstrations(dataset_name, category):
     elif dataset_name == "mmlu": 
         messages_mmlu = [{
             "role": "system",
-            "content": "The following are multiple-choice questions (with answers) about " + category + ". Please think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
+            "content": "The following are multiple-choice questions (with answers) about " + category + ". Let's think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
         }] # same way for extract the answer
         rand_list_from_train = np.random.choice(mmlu_datalist_all[category], 5, replace=False)
         i = 0
@@ -222,7 +222,7 @@ def get_demonstrations(dataset_name, category):
     elif dataset_name == "mmlu_pro":
         messages_mmlu_pro = [{
             "role": "system",
-            "content": "The following are multiple-choice questions (with answers) about " + category + ". Please think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
+            "content": "The following are multiple-choice questions (with answers) about " + category + ". Let's think step by step. You will only generate one sentence that extends the reasoning trajectory that solves the question given the question and partial answer reasoning trajectory. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
         }]
         data_list = np.random.choice(mmlu_datalist[category], 5, replace=False)
         for i in range(5):
@@ -592,7 +592,7 @@ def extract_predictions(dataset, response_list):
     return normalized_prediction_list
 
 
-def generate_question(dataset, data): # checked
+def generate_question(dataset, data): # possible revision
     # get previous is used for prompting the model while generate_question is used for record the question
     if dataset == "arc":
         question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
