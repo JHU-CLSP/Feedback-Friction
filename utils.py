@@ -104,16 +104,23 @@ def setup_datalist(dataset_name, mode="test"):
             return data_list # all test data
         elif mode == "train":
             return mmlu_datalist # a dictionary that contains 12 subcategories with 5 questoins in each 
+        
     elif dataset_name == "gpqa": # revised for adding the 'Explanation' field into the reformatted dataset
         original_dataset = datasets.load_dataset("Idavidrein/gpqa", "gpqa_diamond")
         formatted_dataset = datasets.load_dataset("jeggers/gpqa_formatted", 'diamond')
         original_data_list = list(original_dataset['train'])
         formatted_data_list = list(formatted_dataset['train'])
+        # TODO: check this update of field from Question to question since otherwise may cause problem
+        # update the key from "Question" to "question" in both datasets
+        for item in original_data_list:
+            item['question'] = item.pop('Question', None)
 
-        original_mapping = {item['Question']: item.get('Explanation', None) for item in original_data_list}
+        for item in formatted_data_list:
+            item['question'] = item.pop('Question', None)
+        original_mapping = {item['question']: item.get('Explanation', None) for item in original_data_list}
         # Add the "Explanation" field to the formatted dataset
         for entry in formatted_data_list:
-            entry_id = entry['Question']
+            entry_id = entry['question']
             if entry_id in original_mapping:
                 entry['Explanation'] = original_mapping[entry_id]
         # ds = datasets.load_dataset("jeggers/gpqa_formatted", 'diamond')
@@ -121,9 +128,31 @@ def setup_datalist(dataset_name, mode="test"):
         global gpqa_datalist
         gpqa_datalist = list(datasets.load_dataset("jeggers/gpqa_formatted", 'main')['train'])
         return formatted_data_list
-
+    
+    # added for multiplication questions
+    elif dataset_name == "custom_simple":
+        custom_list = load_dataset("custom_simple")
+        return custom_list
         
+# load the costumsized dataset
+def load_dataset(dataset_name):
+    dataset_files = {
+        "custom_simple": "/scratch/dkhasha1/bzhang90/Self-InPerfect/digits_buckets/multiplication_questions_7d_part1.jsonl",
+    }
+    
+    if dataset_name in dataset_files:
+        file_path = dataset_files[dataset_name]
+        try:
+            with open(file_path, 'r') as file:
+                return [json.loads(line) for line in file]
+        except FileNotFoundError:
+            print(f"Dataset {dataset_name} not found. Please ensure {file_path} exists. You may need to create the dataset by running generate_arith_questions.py")
+            return []
+        except json.JSONDecodeError:
+            print(f"Error decoding JSON in {file_path}. Please check the file format.")
+            return []
 
+# TODO: do we need to reprompt the model of the original question at the end again? see example below:
 def get_previous(dataset_name, data):
     if dataset_name == "arc":
         # previous = "Question: " + data['question'] + '\nChoices: '
@@ -148,21 +177,23 @@ def get_previous(dataset_name, data):
         # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['choices']) + '\nAnswer:'
         return previous
     elif dataset_name == "mmlu_pro":
-        
         previous = "Question: " + data['question'] + "\nChoices: "
+        # TODO:
+        # example: previous = "Question: " + data['question'] + original question + "\nChoices: ""
         for i in range(len(data['options'])):
             previous += f"({chr(ord('A') + i)}) " + data['options'][i] + "\n"
         previous += "Answer: "
-        
-        # previous = "Question: " + data['question']  + "\nChoices: " + '\n'.join(data['options']) + '\nAnswer:'
         return previous
     elif dataset_name == "gpqa": #revised
         
-        previous = "Question: " + data['Question'] + "\nChoices:\n"
+        previous = "Question: " + data['question'] + "\nChoices:\n"
         for i in range(len(data['options'])):
             previous += f"({chr(ord('A') + i)}) " + data['options'][i] + "\n"
         previous += "Answer:"
         
+        return previous
+    elif dataset_name == "custom_simple":
+        previous = "Question: " + data['question'] + '\nAnswer: '
         return previous
 
 
@@ -285,15 +316,13 @@ def get_demonstrations(dataset_name, category):
             "role": "system",
             "content": "The following are multiple-choice questions. Please think step by step. When you're ready, please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Please always include the parentheses around the letter choice."
         }]
-        # rand_list_from_train = np.random.choice(gpqa_datalist, 8, replace=False)
-        # for data in rand_list_from_train:
-        #    l = []
-        #    d = {"role": "user", "content": data['Question']}
-        #    l.append(d)
-        #    l.append({"role": "assistant", "content": data['Explanation'] + "\n\nThe answer is: " + data['Correct Answer']})
-        #    messages_gpqa.extend(l)
         return messages_gpqa
-
+    elif dataset_name == "custom_simple": # zero shots
+        message_custom = [{
+            "role":"system",
+            "content":"You are a smart assistant in solving arithmetic questions. Please think step by step. If you think you're ready to output the answer, you can wrap your answer with \\boxed{}. Please follow this format. "
+        }]
+        return message_custom
 
 def get_normalized_answer(dataset_name, data):
     if dataset_name == "arc" or dataset_name == "ecqa":
@@ -317,12 +346,15 @@ def get_normalized_answer(dataset_name, data):
         return ans # get a letter output
     elif dataset_name == "mmlu_pro":
         return data['answer']
+    # TODO: double check function is as intended
     elif dataset_name == "gpqa": #revised
         number = data['answer']
         index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
         ans = index_to_letter[number]
-        # final_ans = "The answer is: " + ans + ". The explanation is: " + data['Explanation'] # using the Explanation for Answer + Solution feedback (buggy)
         return ans # get a letter output
+    elif dataset_name == "custom_simple":
+        solution = data['answer']
+        return str(solution)
 
 
 def get_dataset_key(dataset_name):
@@ -335,7 +367,9 @@ def get_dataset_key(dataset_name):
     elif dataset_name == "trivia_qa":
         return "question"
     elif dataset_name == "gpqa":
-        return "Question"
+        return "question" # TODO: check the revision from Question to question
+    elif dataset_name == "custom_simple":
+        return "question"
     
 
 def get_process_answer(dataset_name, data):
@@ -352,14 +386,17 @@ def get_process_answer(dataset_name, data):
         return ans # get a letter output
     elif dataset_name == "mmlu_pro":
         return data['answer']
-    elif dataset_name == "gpqa": #revised
+    elif dataset_name == "gpqa": 
+        # TODO: to run GPQA answer + solution correctly, we need to add the --use_process_feedback
+        # the results we previously got is also correct since I manually add the explanantion before in the get_normalized_answer part
+        # but then I discovered this function and the revise to use this instead.
         number = data['answer'] # map numbers to letters
         index_to_letter = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
         ans = index_to_letter[number]
         final_ans = "The answer is: " + ans + ". The explanation is: " + data['Explanation'] # use this if we use feedback with solution
-        # return ans # otherwise we directly give the answer
-        return final_ans # get a letter output
-
+        return final_ans
+    elif dataset_name == "custom_simple":
+        return str(data['answer'])
 
 def get_normalized_prediction(dataset_name, prediction):
     if dataset_name == "arc" or dataset_name == "ecqa" or dataset_name == "proofwriter":
@@ -376,40 +413,47 @@ def get_normalized_prediction(dataset_name, prediction):
         return res
     elif dataset_name == "trivia_qa":
         return normalize_answer(prediction)
-    elif dataset_name == "mmlu": # extract the formated answer since we have the same prompt as mmlu_pro
-        regex1 = re.compile("answer is \(?\([A-D]\)?\)") 
-        if regex1.search(prediction):
-            return regex1.search(prediction).group().split('(')[1][0]
-        regex2 = re.compile("\.*\[aA\]nswer:\s*\([A-D]\)")
-        if regex2.search(prediction):
-            return regex2.search(prediction).group().split('(')[1][0]
-        regex3 = re.compile("answer is \(?[A-J]\)?", re.IGNORECASE)
+    
+    # TODO: please double check the implementation. I've created test cases for them in test_re.py
+    if dataset_name == "mmlu":  # extract the formatted answer
+        regex1 = re.compile(r"answer is \(?\(([A-D])\)?\)")
+        if (match := regex1.search(prediction)):
+            return match.group(1).upper()
+        regex2 = re.compile(r"\.*\[aA\]nswer:\s*\(([A-D])\)")
+        if (match := regex2.search(prediction)):
+            return match.group(1).upper()
+        regex3 = re.compile(r"answer is \(?([A-D])\)?", re.IGNORECASE)
         if (match := regex3.search(prediction)):
-            return match.group(1)
-        return random.choice(['A', 'B', 'C', 'D']) # answer not found then random
-    elif dataset_name == "mmlu_pro": # extract the formated answer
-        regex1 = re.compile("answer is \(?\([A-J]\)?\)") 
-        if regex1.search(prediction):
-            return regex1.search(prediction).group().split('(')[1][0]
-        regex2 = re.compile("\.*\[aA\]nswer:\s*\([A-J]\)")
-        if regex2.search(prediction):
-            return regex2.search(prediction).group().split('(')[1][0]
-        regex3 = re.compile("answer is \(?[A-J]\)?", re.IGNORECASE) # if no () exists and also case not sensitive, please double check
-        if (match := regex3.search(prediction)): # directly return the macthed result
-            return match.group(1)
-        return random.choice(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) # answer not found then random
+            return match.group(1).upper()
+        return "X"  # represent not found
+    
+    elif dataset_name == "mmlu_pro":  # extract the formatted answer
+        regex1 = re.compile(r"answer is \(?\(([A-J])\)?\)")
+        if (match := regex1.search(prediction)):
+            return match.group(1).upper()
+        regex2 = re.compile(r"\.*\[aA\]nswer:\s*\(([A-J])\)")
+        if (match := regex2.search(prediction)):
+            return match.group(1).upper()
+        regex3 = re.compile(r"answer is \(?([A-J])\)?", re.IGNORECASE)
+        if (match := regex3.search(prediction)):
+            return match.group(1).upper()
+        return "X"  # represent not found
+    
     elif dataset_name == "gpqa":
-        #return prediction.strip() #revised
-        regex1 = re.compile("answer is \(?\([A-D]\)?\)") 
-        if regex1.search(prediction):
-            return regex1.search(prediction).group().split('(')[1][0]
-        regex2 = re.compile("\.*\[aA\]nswer:\s*\([A-D]\)")
-        if regex2.search(prediction):
-            return regex2.search(prediction).group().split('(')[1][0]
-        regex3 = re.compile("answer is \(?[A-J]\)?", re.IGNORECASE)
+        regex1 = re.compile(r"answer is \(?\(([A-D])\)?\)")
+        if (match := regex1.search(prediction)):
+            return match.group(1).upper()
+        regex2 = re.compile(r"\.*\[aA\]nswer:\s*\(([A-D])\)")
+        if (match := regex2.search(prediction)):
+            return match.group(1).upper()
+        regex3 = re.compile(r"answer is \(?([A-D])\)?", re.IGNORECASE)
         if (match := regex3.search(prediction)):
-            return match.group(1)
-        return random.choice(['A', 'B', 'C', 'D']) # answer not found then random
+            return match.group(1).upper()
+        return "X"  # represent not found
+
+    elif dataset_name == "custom_simple" or "custom_hard":
+        res = remove_boxed(last_boxed_only_string(prediction)) # TODO: please check if have time. Used the format for math questions
+        return res
 
 def flatten_list(new_messages):
     messages = []
@@ -429,7 +473,7 @@ def is_equivalent(dataset, item, data):
         except:
             return False
         return False
-    elif dataset == "arc" or dataset == "gsm8k" or dataset == "gpqa" or dataset == "mmlu_pro" or dataset == "gsm8k_symbolic" or dataset == "mmlu":
+    elif dataset == "arc" or dataset == "gsm8k" or dataset == "gpqa" or dataset == "mmlu_pro" or dataset == "gsm8k_symbolic" or dataset == "mmlu" or dataset == "custom_simple":
         if len(item["normalized_prediction"]) >= 1 and item["normalized_prediction"][0] == item["normalized_answer"]:
             return True
         else:
@@ -460,7 +504,7 @@ def get_normalized_predictions(dataset, response_list):
             except Exception as e:
                 print(e)
                 print("Error")
-    elif dataset == "math" or dataset == "arc" or dataset == "trivia_qa":
+    elif dataset == "math" or dataset == "arc" or dataset == "trivia_qa" or dataset == "custom_simple":
         for response in response_list:
             try:
                 prediction = response
@@ -486,14 +530,6 @@ def get_normalized_predictions(dataset, response_list):
             except:
                 print("Error")
     return normalized_prediction_list
-
-
-def check_if_ground_truth_exists(input_string, ground_truth):
-    # return True if ground truth exists
-    ground_truth_str = str(ground_truth)
-    match = re.search(rf'\b{re.escape(ground_truth_str)}\b', input_string)
-    # match = re.search(rf'\b{ground_truth_str}\b', input_string)
-    return match is not None
 
 
 async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None, logprobs=None):
@@ -565,6 +601,21 @@ def mask_answer_in_string(input_string, ground_truth):
     masked_string = re.sub(rf'\b{ground_truth_str}\b', '<answer masked>', input_string)
     return masked_string
 
+# TODO: newly added for multiplication questions
+def mask_answer_in_string_arith(input_string, ground_truth):
+    ground_truth_str = str(ground_truth)
+
+    # this will mask those with 1,000,000 "," between numbers
+    comma_formatted = re.sub(r"(\d)(?=(\d{3})+$)", r"\1,", ground_truth_str)
+
+    # ensure we only match the exact number with or without commas
+    pattern = rf'\b{re.escape(ground_truth_str)}\b|\b{re.escape(comma_formatted)}\b'
+
+    # replace occurrences with "<answer masked>"
+    masked_string = re.sub(pattern, '<answer masked>', input_string)
+
+    return masked_string
+
 def mask_answer_in_string_mcq(input_string, ground_truth): # possible to use if we cannot eliminate leak of answer choice
     ground_truth_str = re.escape(str(ground_truth))
     pattern = rf'\(\s*{ground_truth_str}\s*\)'
@@ -574,9 +625,11 @@ def mask_answer_in_string_mcq(input_string, ground_truth): # possible to use if 
 def check_if_ground_truth_exists(input_string, ground_truth):
     # return True if ground truth exists
     ground_truth_str = str(ground_truth)
-    match = re.search(rf'\b{ground_truth_str}\b', input_string)
+    match = re.search(rf'\b{re.escape(ground_truth_str)}\b', input_string)
+    # match = re.search(rf'\b{ground_truth_str}\b', input_string)
     return match is not None
 
+# not useful for now
 def check_if_ground_truth_exists_mcq(input_string, ground_truth):
 
     ground_truth_str = str(ground_truth)
@@ -610,7 +663,7 @@ def extract_predictions(dataset, response_list):
                     break
             except:
                 print("Error")
-    elif dataset == "math":
+    elif dataset == "math" or dataset == "custom_simple":
         for response in response_list:
             try:
                 prediction = response
@@ -652,12 +705,12 @@ def extract_predictions(dataset, response_list):
                 print("Error")
     return normalized_prediction_list
 
-
-def generate_question(dataset, data): # possible revision
+# TODO: please double check
+def generate_question(dataset, data): # please check do we need to add the original question once again at the end for completness? see example below
     # get previous is used for prompting the model while generate_question is used for record the question
     if dataset == "arc":
         question = data[get_dataset_key(dataset)] + "\n\nChoices: " + '\n'.join(data["choices"]["text"])
-    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k": # or dataset == "gpqa"
+    elif dataset == "math" or dataset == "trivia_qa" or dataset == "gsm8k" or dataset == "custom_simple" or dataset == "custom_hard": # or dataset == "gpqa"
         question = data[get_dataset_key(dataset)]
     elif dataset == "mmlu":
         question = data[get_dataset_key(dataset)]  + "\nChoices: " + '\n'.join(data['choices'])
@@ -665,6 +718,7 @@ def generate_question(dataset, data): # possible revision
         question = data[get_dataset_key(dataset)]  + "\nChoices: " + '\n'.join(data['options'])
     elif dataset == "gpqa":
         question = data[get_dataset_key(dataset)]  + "\nChoices: " + '\n'.join(data['options'])
+        # example: question = data[get_dataset_key(dataset)]  + original question + "\nChoices: " + '\n'.join(data['options'])
     return question
 
 
