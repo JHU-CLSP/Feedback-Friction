@@ -11,9 +11,9 @@ import asyncio
 import aiohttp
 from tqdm import tqdm
 from argparse import ArgumentParser
-from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, mask_answer_in_string_arith
+from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, mask_answer_in_string_arith, mask_answer_in_string, get_raw_answer, mask_answer_in_string_strict
 from database import RedisCache
-from manual_hints_5d import provide_multiplication_hints, extract_numbers_and_process_5d, extract_numbers_and_process_6d, extract_numbers_and_process_4d, extract_numbers_and_process_7d
+from manual_hints_5d import provide_multiplication_hints, extract_numbers_and_process_5d, extract_numbers_and_process_6d, extract_numbers_and_process_4d, extract_numbers_and_process_7d, extract_numbers_and_process_8d, extract_numbers_and_process_9d
 from openai import OpenAI
 
 # Connect to your local Redis
@@ -28,6 +28,19 @@ use_process_feedback = False
 np.random.seed(14)
 logprobs = None
 
+client = OpenAI(api_key="Your OpenAi Key")
+
+# TODO: please check
+async def get_feedback_from_gpt4o(agent_model, revise_message, temperature, n, tokenizer, base_url, ports, cache, dataset, round):
+    response = await client.ChatCompletion.create(
+        model="gpt-4o",
+        messages=revise_message,
+        temperature=temperature,
+        n=n,
+        seed=14
+    )
+    feedback = response.choices[0].message.content
+    return feedback
 
 async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokenizer=None, temperature=0.0, n=1, round=0):
     previous = get_previous(dataset, data) # extract and reformat question
@@ -54,15 +67,15 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         if len(normalized_prediction_list) == 0 or not is_equivalent(dataset, {"normalized_prediction": normalized_prediction_list, "normalized_answer": get_normalized_answer(dataset, data)}, data):
             if not use_process_feedback and dataset != "custom_simple":
 
-                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
+                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "}]
 
             elif dataset == "custom_simple": # feedback for arith questions
                 # TODO: for future, I can directly add the feedback for each question into the dataset instead of using the function here
-                feedback_messages = [{"role": "user", "content":  "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] +  "\nPrevious Answer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "The correct steps that lead to the final answer is: " + extract_numbers_and_process_7d(str(data[get_dataset_key(dataset)])) +"\nBased on the correct calculation process, please give me feedback on which step was wrong or how to get to the correct answer in detail: "}]
-                
+                feedback_messages = [{"role": "user", "content":  "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] +  "\nPrevious Answer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "The correct steps that lead to the final answer is: " + extract_numbers_and_process_8d(str(data[get_dataset_key(dataset)])) +"\nBased on the correct calculation process, please give me feedback on which step was wrong or how to get to the correct answer in detail: "}]
+                # print(extract_numbers_and_process_7d(str(data[get_dataset_key(dataset)]))) # check feedback
             else:
                 # also provide ground-truth answer trajectory
-                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the correct answer: "}]
+                feedback_messages = [{"role": "user", "content": "There is a previous mistake on answering this question. Question: " + data[get_dataset_key(dataset)] + "\nAnswer: " + response_list[0] + "\nThe correct final answer should be: " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "\nPlease give me feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "}]
             
             feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
 
@@ -96,14 +109,31 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                 else:
                     choices = "\nChoices: " + '\n'.join(data['options'])
                     
-                if not use_process_feedback: # should have different feedback messages
-                    revise_message = [{"role": "user", "content": "There is a feedback for the question: " + question_part + " " + choices + " which has the ground truth " + get_normalized_answer(dataset, data) + "Check if the feedback leaks the ground truth. If so, remove the ground truth from the feedback and provide the feedback again. "}]
+                if not use_process_feedback: # should have different feedback messages # try same ways
+                    revise_message = [{"role": "user", "content": (
+                        f"The following feedback is provided for the question: {question_part} with {choices}. "
+                        f"The ground truth answer is: {get_normalized_answer(dataset, data)}. "
+                        f"Check if the feedback explicitly reveals the ground truth, including both the letter choice and its content. "
+                        f"If so, revise the feedback to remove any direct mention or leakage of the ground truth. Do not make any additional changes! "
+                        f"Provide only the revised feedback without any additional commentary!"
+                    )}]
                 else:
-                    revise_message = [{"role": "user", "content": "There is a feedback for the question: " + question_part + " " + choices + " which has the ground truth " + get_normalized_answer(dataset, data) + "\nThe correct solution that arrives at correct final answer is: " + get_process_answer(dataset, data) + "Check if the feedback leaks the ground truth. If so, remove the ground truth from the feedback and provide the feedback again. "}]
-                
+                    revise_message = [{"role": "user", "content": (
+                        f"The following feedback is provided for the question: {question_part} with {choices}. "
+                        f"The ground truth answer is: {get_normalized_answer(dataset, data)}. "
+                        f"The correct solution that reaches the correct final answer is: {get_process_answer(dataset, data)}. "
+                        f"Check if the feedback explicitly reveals the ground truth, including both the letter choice and its content. "
+                        f"If so, revise the feedback to remove any direct mention or leakage of the ground truth. Do not make any additional changes! "
+                        f"Provide only the revised feedback without any additional commentary!"
+                    )}]
+                # f"The correct solution that reaches the correct final answer is: {get_process_answer(dataset, data)}. "
+                # f"Do not add the answer and solution that is provided to you in the feedback."
                 # new feedback after revision
-                feedback =  await call_vllm_server(agent_model, revise_message, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
-            
+                # feedback =  await call_vllm_server(agent_model, revise_message, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+                # TODO: please check
+                feedback = await get_feedback_from_gpt4o(agent_model, revise_message, temperature, n, tokenizer, base_url, ports, cache, dataset, round)
+                # if len(feedback) > 0:
+                #    feedback = (mask_answer_in_string_strict(feedback[0], get_normalized_answer(dataset, data), dataset, data), None) # direct musk
             if dataset == "custom_simple":
                 feedback = (mask_answer_in_string_arith(feedback[0], get_normalized_answer(dataset, data)), None) # direct musk
 
@@ -117,6 +147,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
     }
     # pbar.update(1)
     return d
+
 
 def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
     result_overall, leftover_problems = [[] for _ in range(iterations)], []
