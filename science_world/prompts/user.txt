@@ -1,0 +1,5 @@
+Observation:
+{{ observation }}
+
+Possible actions: {{ possible_actions }}
+Possible objects: {{ possible_objects }}

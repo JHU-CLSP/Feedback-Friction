@@ -1,0 +1,12 @@
+base_url: http://0.0.0.0
+ports: 
+scienceworld_path: 
+turn_budget: 100
+generation_params:
+  model: meta-llama/Llama-3.3-70B-Instruct
+  max_tokens: 1024
+  temperature: 0.0
+prompts:
+  dir: 
+  user: user.txt
+  system: system.txt
