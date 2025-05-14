@@ -1,3 +1,5 @@
 __pycache__/*
 logs/*
 server_logs/*
+*/configs/*
+!*/configs/defaults.yaml
