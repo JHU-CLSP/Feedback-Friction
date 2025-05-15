@@ -70,16 +70,16 @@ Below is a complete list of all arguments along with their descriptions.
 ## Feedback Modes
 
 #### Binary Correctness
-python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1
+```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1```
 
 #### Self-Generated Reflective (--use_feedback)
-python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback
+```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback```
 
 #### Process-Solution Reflective (--use_feedback --use_process_feedback)
-python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback
+```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback```
 
 #### Strong-Model Reflective (--use_feedback --use_process_feedback --use_openai)
-python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback --use_openai
+```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback --use_openai```
 
 We offer other functionalities such as --use_best_of_n which is the part of rejection sampling in our code. --in_temp which increases the temperature per iteration --binary_hint refers to provide models of its previous incorrect choices and ask it not to do that again --shuffle refers to shuffing the positions of answer choices in the question for MCQ questions 
 
