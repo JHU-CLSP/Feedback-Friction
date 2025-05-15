@@ -113,6 +113,25 @@ pop_qa
 
 **Deprecated**: gsm8k, gsm8k_symbolic
 
+## Output Data
+The output data are stored in jsonl files will record the iterative improvement process. For each dataset, the output files may differ in their field names, but basically, here are the content for each field:
+
+**question**: record the finished all rounds of answer + feedback histories with the original question in the front. 
+
+**normalized answer**: the ground truth answer for this question
+
+**normalized prediction**: the extracted prediction from the model's response
+
+**full response**: record the model's current round of response
+
+**feedback**: if use feedback, this record the feedback generated
+
+**response prob**: the average log probability per token of the model's current response
+
+**is_correct**: if the current iteration's answer is correct
+
+**iteration**: which iteration are we currently at, starting from iteration 0
+
 
 
 
