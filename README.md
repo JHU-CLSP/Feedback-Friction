@@ -1,7 +1,7 @@
 # Self-InPrefect
 Repository for our paper RIGID THINKING: LLMs Struggle to Fully Incorporate External Feedback
 
-The main file for our experiments is openai_async_process.py which has the following command:
+The **main file** for our experiments is openai_async_process.py which has the following command:
 
 | Option                   | Type    | Default                                 | Description                                                 |
 | ------------------------ | ------- | --------------------------------------- | ----------------------------------------------------------- |
@@ -34,3 +34,18 @@ corresponds to the Binary Correctness Feedback, Self-Generated Reflective Feedba
 **Self-Generated Reflective Feedback**: python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback
 
 **Strong-Model Reflective Feedback**: python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback --use_openai
+
+We offer other functionalities such as --use_best_of_n which is the part of rejection sampling in our code. --in_temp which increases the temperature per iteration --binary_hint refers to provide models of its previous incorrect choices and ask it not to do that again --shuffle refers to shuffing the positions of answer choices in the question for MCQ questions 
+
+To use the --use_openai you should fill in your openai api key in the AsyncOpenAI Client with your api key. 
+
+Currently supporting datasets:
+mmlu, mmlu_pro, gpqa, math (refers to math-500), custom_simple (refers to 5 digits multiplication questions), hex (refers to 5 digits hexidecimal multiplication questions), aime_2024, trivia_qa, pop_qa. Note gsm8k and gsmsymbolic are not used anymore in our evaluation and are deprecated in the setting. 
+
+Here is a brief summary of the functionalities of other files:
+manual_hints_5d.py: providing hints used for 5 digits multiplications
+start_multiple_server...sh: files for starting vllm server to host model on clusters
+check_dis_new.py: script for checking the "in-dsirtibutionness" of the model's output by generating 100 outputs per question
+error_analysis.py: script used for classifying whether model follows feedback based on openai model's judgement. Also need api key input.
+
+Above are all the main files contributing to our experiment setup.
