@@ -1,4 +1,4 @@
-# RIGID THINKING: LLMs Struggle to Fully Incorporate External Feedback**
+# RIGID THINKING: LLMs Struggle to Fully Incorporate External Feedback
 
 A codebase for evaluating how large language models may fail in incorporating different styles of feedback across several reasoning domains.
 
