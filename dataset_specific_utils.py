@@ -142,38 +142,38 @@ class timeout:
 
 def is_equiv(x1: str, x2: str) -> bool:
     """
-    x1 and x2 are normalized latex string
+    x1 and x2 are normalized LaTeX strings.
+    Try both ANTLR and Lark backends to check symbolic equivalence.
+    Return True if either one confirms equivalence.
     """
     try:
         with timeout(seconds=5000):
-            try:
-                parsed_x1 = parse_latex(x1)
-                parsed_x2 = parse_latex(x2)
-            except (
-                sympy.parsing.latex.errors.LaTeXParsingError,
-                sympy.SympifyError,
-                TypeError,
-            ):
-                return False
-
-            try:
-                diff = parsed_x1 - parsed_x2
-            except TypeError:
-                return False
-
-            try:
-                if sympy.simplify(diff) == 0:
-                    return True
-                else:
-                    return False
-            except ValueError:
-                pass
+            for backend in ["antlr", "lark"]:
+                try:
+                    parsed_x1 = parse_latex(x1, backend=backend)
+                    parsed_x2 = parse_latex(x2, backend=backend)
+                    if parsed_x1 is None or parsed_x2 is None:
+                        continue
+                    try:
+                        diff = parsed_x1 - parsed_x2
+                        if sympy.simplify(diff) == 0:
+                            return True
+                    except TypeError:
+                        continue
+                except (
+                    sympy.parsing.latex.errors.LaTeXParsingError,
+                    sympy.SympifyError,
+                    TypeError,
+                ):
+                    continue
     except TimeoutError:
         return False
     except ImportError as e:
         raise
     except Exception as e:
         return False
+
+    return False  # If neither backend succeeded
 
 
 def get_unnormalized_answer(text: str) -> str:
@@ -423,6 +423,12 @@ def fix_sqrt(string):
         new_string += new_substr
     return new_string
 
+def strip_string_mult(string):
+    
+    string = string.replace("\n", "").replace(" ", "")
+    string = string.replace(",", "")
+    
+    return string
 
 def strip_string(string):
     # linebreaks
