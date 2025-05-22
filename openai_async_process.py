@@ -14,7 +14,7 @@ from utils import setup_datalist, get_previous, get_demonstrations, get_normaliz
 # from database import RedisCache
 from manual_hints_5d import provide_multiplication_hints, extract_numbers_and_process_5d, extract_numbers_and_process_6d, extract_numbers_and_process_4d, extract_numbers_and_process_7d, extract_numbers_and_process_8d, extract_numbers_and_process_9d
 from openai import OpenAI
-from test_hex import mask_hex_answers_in_feedback
+# from test_hex import mask_hex_answers_in_feedback
 import sys
 sys.setrecursionlimit(5000)
 from openai import AsyncOpenAI
