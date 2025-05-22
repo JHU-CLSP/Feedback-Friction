@@ -15,10 +15,9 @@ semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 from openai import AsyncOpenAI
 
 # create initials
-client = AsyncOpenAI(api_key="KEY")
+client = AsyncOpenAI(api_key="key")
 dataset_files = {
         "custom_simple": "digits_buckets/multiplication_questions_6d.jsonl",
-        # "fewshots": "/scratch/dkhasha1/bzhang90/Self-InPerfect/fewshots_data/fewshots_data_6d.json",
         "hex": "hex5d.jsonl"
 }
 
@@ -426,7 +425,7 @@ def get_demonstrations(dataset_name, category):
         return messages_triviaqa # check
     
     elif dataset_name == "pop_qa":
-        messages_popqa = [{"role": "system", "content": "You are a smart assistant that answers fact-based questions about people. If you think you're ready to output the answer, you can just output an answer."}]
+        messages_popqa = [{"role": "system", "content": "You are a smart assistant that answers fact-based questions. If you think you're ready to output the answer, you can just output an answer."}]
         
         rand_list_from_popqa = np.random.choice(popqa_datalist, 5, replace=False)
 
@@ -1314,7 +1313,6 @@ def mask_answer_in_string_arith(input_string, ground_truth, intermediate_steps=N
     return masked_string
 
 
-
 def mask_answer_in_string_mcq(input_string, ground_truth): # possible to use if we cannot eliminate leak of answer choice
     ground_truth_str = re.escape(str(ground_truth))
     pattern = rf'\(\s*{ground_truth_str}\s*\)'
@@ -1428,5 +1426,6 @@ def generate_question(dataset, data, round=0): # please check do we need to add 
             question = data[get_dataset_key(dataset)]
         # example: question = data[get_dataset_key(dataset)]  + original question + "\nChoices: " + '\n'.join(data['options'])
     return question
+
 
 
