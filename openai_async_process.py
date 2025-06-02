@@ -27,7 +27,6 @@ from utils import (
     call_openai_feedback,
     call_vllm_server,
     call_vllm_server_batched,
-    call_vllm_server_reasoner,
     generate_question,
     get_dataset_key,
     get_demonstrations,
@@ -77,13 +76,6 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         if agent_temp >= 1.5:
             agent_temp = 1.5
             
-    if agent_model == "Qwen/Qwen3-32B" or agent_model == "Qwen/Qwen3-235B-A22B":
-        agent_temp = 0.6
-        temperature = 0.6
-        if fluctuate_temp:
-            agent_temp += round * 0.05
-        if agent_temp >= 1.5:
-            agent_temp = 1.5
     # print("the current temp is: ", agent_temp)
     if round != 0:
         cleaned = previous.replace("Please answer the question again.", "").strip()
@@ -119,18 +111,10 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         "role": "user",
         "content": previous # ask the new question
     })
-    if agent_model == "Qwen/Qwen3-32B" or agent_model == "Qwen/Qwen3-235B-A22B":
-        agent_response, agent_response_probs, agent_reasons = await call_vllm_server_reasoner(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, type="answer", dataset=dataset, round=round, logprobs=logprobs)
-        
-        if round == 0 or "reasoning_content_agent" not in data:
-            data["reasoning_content_agent"] = []
-
-        data["reasoning_content_agent"].append(agent_reasons)
-    
-    elif round == 0 or not best_of_n and agent_model != "Qwen/Qwen3-32B" and agent_model != "Qwen/Qwen3-235B-A22B":
+    if round == 0 or not best_of_n:
         agent_response, agent_response_probs = await call_vllm_server(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, type="answer", dataset=dataset, round=round, logprobs=logprobs)
         print("not using best of n temp: ", agent_temp)
-    elif round != 0 and best_of_n and agent_model != "Qwen/Qwen3-32B" and agent_model != "Qwen/Qwen3-235B-A22B":
+    elif round != 0 and best_of_n:
         best_of_n_num = 25 # default is 10
         all_responses = []
         all_response_probs = []
@@ -356,27 +340,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                     # extract the correct history without listing the question again
                     start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
                     history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
-                    # added for Qwen:
-                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa" and (agent_model == "Qwen/Qwen3-32B" or agent_model == "Qwen/Qwen3-235B-A22B"):
-                        feedback_messages = [
-                            {"role": "user", 
-                            "content": (
-                                    "There was a mistake in answering this question.\n\n"
-                                    + original_question_combined
-                                    + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                                    + "History:\n\n"
-                                    + history # extract this except the question for good formatting
-                                    + "\n\nMost Recent Answer: " + response_list[0]
-                                    + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                    + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
-                                    + "Note that the required format for that model in answering the question is: 'please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Make sure to always include parentheses around the letter.'"
-                                    + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                                    + "WITHOUT revealing the correct final answer or the content of the correct option."
-                                    )
-                            }
-                        ]
-                    
-                    elif dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
+                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
                         feedback_messages = [
                             {"role": "user", 
                             "content": (
@@ -439,22 +403,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                         ]                        
                 else: # initial round no history exists
                     print("using process feedback!")
-                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa" and (agent_model == "Qwen/Qwen3-32B" or agent_model == "Qwen/Qwen3-235B-A22B"):
-                        feedback_messages = [
-                            {"role": "user", 
-                            "content": (
-                                    "There was a mistake in answering this question.\n\n"
-                                    + original_question_combined
-                                    + "\n\nMost Recent Answer: " + response_list[0]
-                                    + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                    + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
-                                    + "Note that the required format for that model in answering the question is: 'please finish your answer with \"The answer is (X)\" where X is the correct letter choice. Make sure to always include parentheses around the letter.'"
-                                    + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                                    + "WITHOUT revealing the correct final answer or the content of the correct option."
-                                    )
-                            }
-                        ]
-                    elif dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
+                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
                         feedback_messages = [
                         {"role": "user", 
                         "content": (
@@ -486,16 +435,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                             }
                         ]     
             # print("feedback_message: ", feedback_messages)
-            if agent_model == "Qwen/Qwen3-32B" or agent_model == "Qwen/Qwen3-235B-A22B":
-                feedback = await call_vllm_server_reasoner(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, type="answer", dataset=dataset, round=round, logprobs=logprobs)
-                # logging feedback reasons
-                feedback_reason = feedback[2]
-                if round == 0 or "reasoning_content_feedback" not in data:
-                    data["reasoning_content_feedback"] = []
-
-                data["reasoning_content_feedback"].append(feedback_reason)
-                
-            elif openai_feedback:
+            if openai_feedback:
                 print("Using OpenAI gpt-4o-mini model for feedback...")
                 feedback_text, feedback_summary, feedback_usage = await call_openai_feedback(feedback_messages)
                 feedback = (feedback_text, None)
@@ -530,28 +470,16 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                 feedback = (mask_answer_in_string_mcq_case_sensitive(feedback[0], get_normalized_answer(dataset, data)), feedback[1]) # return prob also
             
     dataset_key = get_dataset_key(dataset) # use this to ensure consistency
-    if agent_model != "Qwen/Qwen3-32B" and agent_model != "Qwen/Qwen3-235B-A22B":
-        d = {
-            dataset_key: generate_question(dataset, data, round=round), # TODO: since we always have a question field, shall we unify the key for question by using "question" instead of others?
-            "normalized_answer": get_normalized_answer(dataset, data),
-            "normalized_prediction": normalized_prediction_list,
-            "full_response": response_list,
-            "feedback": feedback,
-            "response_probs": agent_response_probs,
-            "original_question": original_question_combined,
-            "is_correct": question_correct
-        }
-    else: # redundant but not sure when will be useful
-        d = {
-            dataset_key: generate_question(dataset, data, round=round), # TODO: since we always have a question field, shall we unify the key for question by using "question" instead of others?
-            "normalized_answer": get_normalized_answer(dataset, data),
-            "normalized_prediction": normalized_prediction_list,
-            "full_response": response_list,
-            "feedback": feedback,
-            "response_probs": agent_response_probs,
-            "original_question": original_question_combined,
-            "is_correct": question_correct
-        }
+    d = {
+        dataset_key: generate_question(dataset, data, round=round), # TODO: since we always have a question field, shall we unify the key for question by using "question" instead of others?
+        "normalized_answer": get_normalized_answer(dataset, data),
+        "normalized_prediction": normalized_prediction_list,
+        "full_response": response_list,
+        "feedback": feedback,
+        "response_probs": agent_response_probs,
+        "original_question": original_question_combined,
+        "is_correct": question_correct
+    }
     # pbar.update(1)
     return d
 
