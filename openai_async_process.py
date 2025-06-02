@@ -1,23 +1,50 @@
-from transformers import AutoTokenizer
-import datasets
-import json
-import time
-import numpy as np
-import re
-import re
-import random
 import asyncio
-import aiohttp
-from tqdm import tqdm
-from argparse import ArgumentParser
-from utils import setup_datalist, get_previous, get_demonstrations, get_normalized_answer, get_normalized_prediction, get_dataset_key, call_vllm_server, get_normalized_predictions, generate_question, get_process_answer, is_equivalent, mask_answer_in_string_arith, call_vllm_server_batched, mask_answer_in_string_math, mask_answers_in_trivia_qa, call_vllm_server_reasoner, mask_answer_in_string_mcq_case_sensitive, mask_answers_in_pop_qa, mask_answer_in_string_hex
-# from database import RedisCache
-from manual_hints_5d import provide_multiplication_hints, extract_numbers_and_process_5d, extract_numbers_and_process_6d, extract_numbers_and_process_4d, extract_numbers_and_process_7d, extract_numbers_and_process_8d, extract_numbers_and_process_9d
-from openai import OpenAI
-# from test_hex import mask_hex_answers_in_feedback
+import json
+import random
+import re
 import sys
-sys.setrecursionlimit(5000)
+import time
+from argparse import ArgumentParser
+
+import aiohttp
+import datasets
+import numpy as np
 from openai import AsyncOpenAI
+from tqdm import tqdm
+from transformers import AutoTokenizer
+
+from manual_hints_5d import (
+    extract_numbers_and_process_5d, 
+    extract_numbers_and_process_6d, 
+    extract_numbers_and_process_4d, 
+    extract_numbers_and_process_7d, 
+    extract_numbers_and_process_8d, 
+    extract_numbers_and_process_9d,
+    provide_multiplication_hints
+)
+from utils import (
+    call_vllm_server,
+    call_vllm_server_batched,
+    call_vllm_server_reasoner,
+    generate_question,
+    get_dataset_key,
+    get_demonstrations,
+    get_normalized_answer,
+    get_normalized_prediction,
+    get_normalized_predictions,
+    get_previous,
+    get_process_answer,
+    is_equivalent,
+    mask_answer_in_string_arith,
+    mask_answer_in_string_hex,
+    mask_answer_in_string_math,
+    mask_answer_in_string_mcq_case_sensitive,
+    mask_answers_in_pop_qa,
+    mask_answers_in_trivia_qa,
+    setup_datalist
+)
+
+sys.setrecursionlimit(5000)
 
 client = AsyncOpenAI(api_key="KEY")
 
@@ -59,9 +86,6 @@ async def call_openai_feedback(messages, max_retries=1, wait_seconds=2):
             else:
                 return f"OpenAI API Error after {max_retries} attempts: {e}", None, {}
 
-        
-# Connect to your local Redis
-cache = None# RedisCache(host='localhost', port=6379, db=0) # try other db=1 on 6379 use 0 for default
 base_url = ['http://c004']
 ports = [1233, 1234, 1235, 1236]
 gsm8k_datalist = None
@@ -134,7 +158,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         "content": previous # ask the new question
     })
     if agent_model == "Qwen/Qwen3-32B" or agent_model == "Qwen/Qwen3-235B-A22B":
-        agent_response, agent_response_probs, agent_reasons = await call_vllm_server_reasoner(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, cache, type="answer", dataset=dataset, round=round, logprobs=logprobs)
+        agent_response, agent_response_probs, agent_reasons = await call_vllm_server_reasoner(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, type="answer", dataset=dataset, round=round, logprobs=logprobs)
         
         if round == 0 or "reasoning_content_agent" not in data:
             data["reasoning_content_agent"] = []
@@ -142,7 +166,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         data["reasoning_content_agent"].append(agent_reasons)
     
     elif round == 0 or not best_of_n and agent_model != "Qwen/Qwen3-32B" and agent_model != "Qwen/Qwen3-235B-A22B":
-        agent_response, agent_response_probs = await call_vllm_server(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, cache, type="answer", dataset=dataset, round=round, logprobs=logprobs)
+        agent_response, agent_response_probs = await call_vllm_server(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, type="answer", dataset=dataset, round=round, logprobs=logprobs)
         print("not using best of n temp: ", agent_temp)
     elif round != 0 and best_of_n and agent_model != "Qwen/Qwen3-32B" and agent_model != "Qwen/Qwen3-235B-A22B":
         best_of_n_num = 25 # default is 10
@@ -161,7 +185,6 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                     tokenizer=tokenizer,
                     base_url=base_url,
                     ports=ports,
-                    cache=cache,
                     type="answer",
                     dataset=dataset,
                     round=round,
@@ -502,7 +525,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                         ]     
             # print("feedback_message: ", feedback_messages)
             if agent_model == "Qwen/Qwen3-32B" or agent_model == "Qwen/Qwen3-235B-A22B":
-                feedback = await call_vllm_server_reasoner(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, cache, type="answer", dataset=dataset, round=round, logprobs=logprobs)
+                feedback = await call_vllm_server_reasoner(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, type="answer", dataset=dataset, round=round, logprobs=logprobs)
                 # logging feedback reasons
                 feedback_reason = feedback[2]
                 if round == 0 or "reasoning_content_feedback" not in data:
@@ -520,7 +543,7 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                 
             else:
                 print("Normal Model!")
-                feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, cache, type="feedback", dataset=dataset, round=round)
+                feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, type="feedback", dataset=dataset, round=round)
 
             if dataset == "math" or dataset == "aime_2024":
 

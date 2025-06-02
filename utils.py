@@ -820,7 +820,6 @@ async def is_equivalent(dataset, item, data):
         prediction = item["normalized_prediction"][0].strip()
         possible_norm = [normalize_answer(ans) for ans in data["possible_answers"]]
         verdict, raw_verdict = await judge_pop_qa(question, prediction, possible_norm)
-        # cache the verdict also
         print("using judge model comment: ", raw_verdict)
         if "judge_responses" not in data:
             data["judge_responses"] = []
@@ -877,19 +876,9 @@ def get_normalized_predictions(dataset, response_list):
     return normalized_prediction_list
 
 
-async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None, logprobs=None):
+async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, type=None, dataset=None, round=None, logprobs=None):
     if n != 1:
         raise ValueError("n must be 1")
-    # res = list(cache.search(
-    #     prompt=flatten_list(new_messages),
-    #     model=agent_model,
-    #     temperature=temperature
-    # ))
-    # if len(res) > 0 and len(res) == 1:
-    #     print("Cache hit")
-    #     return res[0]['response']
-    # elif len(res) > 0 and len(res) > 1:
-    #     raise ValueError("Multiple results found")
     url = get_url(base_url, ports)
     content = {
         "model": agent_model,
@@ -929,20 +918,11 @@ async def call_vllm_server(agent_model, new_messages, temperature, n, tokenizer,
     # Store responses
     if type is None or dataset is None or round is None:
         raise ValueError("Type or dataset is None")
-    # cache.store(
-    #     prompt=flatten_list(new_messages),
-    #     response=agent_response,
-    #     model=agent_model,
-    #     temperature=temperature,
-    #     type=type,
-    #     dataset=dataset,
-    #     round=round
-    # )
     
     return (agent_response, prob)
 
 # default version of calling the reasoner model
-async def call_vllm_server_reasoner(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, cache, type=None, dataset=None, round=None, logprobs=None):
+async def call_vllm_server_reasoner(agent_model, new_messages, temperature, n, tokenizer, base_url, ports, type=None, dataset=None, round=None, logprobs=None):
     if n != 1:
         raise ValueError("n must be 1")
 
@@ -998,7 +978,7 @@ async def call_vllm_server_reasoner(agent_model, new_messages, temperature, n, t
 # we rely on default temp at here
 async def call_vllm_server_reasoner_json(
     agent_model, new_messages, temperature, n, tokenizer,
-    base_url, ports, cache, type=None, dataset=None, round=None, logprobs=None
+    base_url, ports, type=None, dataset=None, round=None, logprobs=None
 ):
     if n != 1:
         raise ValueError("n must be 1")
@@ -1086,7 +1066,6 @@ async def call_vllm_server_batched(
     tokenizer,
     base_url,
     ports,
-    cache,
     type=None,
     dataset=None,
     round=None,
