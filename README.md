@@ -1,137 +1,176 @@
 # RIGID THINKING: LLMs Struggle to Fully Incorporate External Feedback
 
-A codebase for evaluating how large language models may fail in incorporating different styles of feedback across several reasoning domains.
+A research framework for evaluating how large language models incorporate different styles of feedback across multiple reasoning domains.
 
 ## Overview
 
-This project implements a unified framework to test large language models’ (LLMs) ability to use **binary**, **self-generated**, and **strong-model** feedback. We run multiple iterations of generation and refinement on a variety of datasets (MMLU, MMLU-Pro, GPQA, MATH-500, AIME 2024, PopQA, TriviaQA, 5 digits multiplication, and 5 digits hexidecimal multiplication) to measure how well can a model refine itself based on different feedback methods. Please check out paper for more implementation details and design choices. 
+This project implements a unified framework to test large language models' (LLMs) ability to use different types of feedback:
 
-## Prerequisites
+- **Binary feedback**: Simple correct/incorrect signals
+- **Self-generated feedback**: Model-generated reflective feedback  
+- **Strong-model feedback**: External model-generated feedback
 
-- Python 3.9+  
-- Install dependencies with:
-
-```bash
-pip install -r requirements.txt
-```
-
-Currently, the most important dependency is vllm version 0.8.3. You can install other dependencies easily after first installing vllm by:
-
-```bash
-pip install vllm==0.8.3
-```
+The framework runs multiple iterations of generation and refinement across various datasets (MMLU, MMLU-Pro, GPQA, MATH-500, AIME 2024, PopQA, TriviaQA, arithmetic, and hexadecimal multiplication) to measure iterative self-improvement capabilities.
 
 ## Installation
+
+### Prerequisites
+- Python 3.9+
+- vLLM 0.8.3+ (for model serving)
+- OpenAI API key (optional, for strong-model feedback)
+
+### Setup
 ```bash
-git clone https://github.com/yourusername/Self-InPrefect.git
-cd Self-InPrefect
+git clone https://github.com/JHU-CLSP/Feedback-Friction.git
+cd Feedback-Friction
+pip install vllm==0.8.3
 pip install -r requirements.txt
+```
+
+### Environment Configuration
+Set your OpenAI API key if using strong-model feedback:
+```bash
+export OPENAI_API_KEY="your-api-key-here"
 ```
 
 ## Usage
 
-All experiments are driven by openai_async_process.py
+All experiments are driven by `openai_async_process.py`. The basic command structure is:
+
 ```bash
 python openai_async_process.py \
-  --dataset gpqa \
-  --agent_model meta-llama/Llama-3.3-70B-Instruct \
-  --base_url http://c007 \
-  --ports 1233 \
-  --write_file gpqa_log.jsonl \
-  --iterations 10 \
-  --proportion 1 \
-  --logprobs 1 \
-  [--use_feedback] [--use_process_feedback] [--use_openai] \
-  [--shuffle] [--binary_hint] [--in_temp] [--best_of_n]
+    --dataset DATASET \
+    --agent_model MODEL_NAME \
+    --base_url BASE_URL \
+    --ports PORT_LIST \
+    --write_file OUTPUT_FILE \
+    --iterations NUM_ITERATIONS \
+    [FEEDBACK_OPTIONS]
 ```
-Below is a complete list of all arguments along with their descriptions.
 
-| Option                   | Type    | Default                                 | Description                                                 |
-| ------------------------ | ------- | --------------------------------------- | ----------------------------------------------------------- |
-| `--dataset`              | `str`   | `"math"`                                | Which dataset to use (e.g., `math`, `gpqa`, `pop_qa`, etc.) |
-| `--agent_model`          | `str`   | `"meta-llama/Meta-Llama-3-8B-Instruct"` | Model name or path for generation (vLLM or HuggingFace)     |
-| `--write_file`           | `str`   | `"output_arc.jsonl"`                    | Path to write the per-example JSONL output                  |
-| `--base_url`             | `str`   | `"http://c004"`                         | Base URL for your vLLM server                               |
-| `--ports`                | `str`   | `"1233_1234_1235_1236"`                 | Underscore-separated ports for parallel vLLM endpoints      |
-| `--temperature`          | `float` | `0.0`                                   | Base sampling temperature                                   |
-| `--n`                    | `int`   | `1`                                     | Number of responses per prompt (best-of-n)                  |
-| `--split`                | `str`   | `"test"`                                | Dataset split to load (`train`, `test`, etc.)               |
-| `--proportion`           | `float` | `1.0`                                   | Fraction of the split to run (0–1)                          |
-| `--use_feedback`         | flag    | `False`                                 | Enable answer-level feedback                                |
-| `--use_process_feedback` | flag    | `False`                                 | Enable full process-based feedback                          |
-| `--use_openai`           | flag    | `False`                                 | Route feedback requests through OpenAI o4-mini              |
-| `--logprobs`             | `int`   | `None`                                  | Number of log-probs to request                              |
-| `--shuffle`              | flag    | `False`                                 | Shuffle MCQ answer choices between iterations               |
-| `--binary_hint`          | flag    | `False`                                 | Provide hints of past incorrect choices                     |
-| `--in_temp`              | flag    | `False`                                 | Increase temperature each round                             |
-| `--best_of_n`            | flag    | `False`                                 | Enable “best-of-n” repeated sampling per round              |
-| `--iterations`           | `int`   | `10`                                    | Total number of refinement rounds                           |
+### Example Commands
+
+**Basic usage (binary feedback only):**
+```bash
+python openai_async_process.py \
+    --dataset gpqa \
+    --agent_model meta-llama/Llama-3.3-70B-Instruct \
+    --base_url http://c007 \
+    --ports 1233 \
+    --write_file gpqa_log.jsonl \
+    --iterations 10
+```
+
+**Self-generated feedback:**
+```bash
+python openai_async_process.py \
+    --dataset gpqa \
+    --agent_model meta-llama/Llama-3.3-70B-Instruct \
+    --base_url http://c007 \
+    --ports 1233 \
+    --write_file gpqa_log.jsonl \
+    --iterations 10 \
+    --use_feedback
+```
+
+**Process-level feedback:**
+```bash
+python openai_async_process.py \
+    --dataset gpqa \
+    --agent_model meta-llama/Llama-3.3-70B-Instruct \
+    --base_url http://c007 \
+    --ports 1233 \
+    --write_file gpqa_log.jsonl \
+    --iterations 10 \
+    --use_feedback \
+    --use_process_feedback
+```
+
+**Strong-model feedback (requires OpenAI API key):**
+```bash
+python openai_async_process.py \
+    --dataset gpqa \
+    --agent_model meta-llama/Llama-3.3-70B-Instruct \
+    --base_url http://c007 \
+    --ports 1233 \
+    --write_file gpqa_log.jsonl \
+    --iterations 10 \
+    --use_feedback \
+    --use_process_feedback \
+    --use_openai
+```
+
+## Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--dataset` | str | `"math"` | Dataset to evaluate (see supported datasets below) |
+| `--agent_model` | str | `"meta-llama/Meta-Llama-3-8B-Instruct"` | Model name for vLLM server |
+| `--write_file` | str | `"output_arc.jsonl"` | Output file path |
+| `--base_url` | str | `"http://c004"` | vLLM server base URL |
+| `--ports` | str | `"1233_1234_1235_1236"` | Underscore-separated server ports |
+| `--temperature` | float | `0.0` | Sampling temperature |
+| `--iterations` | int | `10` | Number of feedback iterations |
+| `--proportion` | float | `1.0` | Fraction of dataset to use (0-1) |
+| `--use_feedback` | flag | `False` | Enable self-generated feedback |
+| `--use_process_feedback` | flag | `False` | Enable process-level feedback |
+| `--use_openai` | flag | `False` | Use OpenAI for feedback generation |
+| `--shuffle` | flag | `False` | Shuffle MCQ answer choices between iterations |
+| `--binary_hint` | flag | `False` | Provide hints about previous incorrect choices |
+| `--in_temp` | flag | `False` | Increase temperature each iteration |
+| `--best_of_n` | flag | `False` | Enable best-of-n sampling per round |
+| `--logprobs` | int | `None` | Number of log probabilities to return |
+
+## Supported Datasets
+
+- **MMLU**: Massive Multitask Language Understanding
+- **MMLU-Pro**: Enhanced version of MMLU  
+- **GPQA**: Graduate-level Google-Proof Q&A
+- **MATH**: MATH-500 mathematical reasoning
+- **AIME 2024**: American Invitational Mathematics Examination
+- **TriviaQA**: Trivia question answering
+- **PopQA**: Popular question answering
+- **Custom Simple**: 5-digit decimal multiplication
+- **Hex**: 5-digit hexadecimal multiplication
+
+**Deprecated**: GSM8K, GSM8K-Symbolic (no longer supported)
 
 ## Feedback Modes
 
-#### Binary Correctness
-```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1```
+### 1. Binary Feedback (Default)
+Provides only correct/incorrect signals after each attempt.
 
-#### Self-Generated Reflective (--use_feedback)
-```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback```
+### 2. Self-Generated Feedback (`--use_feedback`)
+The model generates its own reflective feedback about errors.
 
-#### Process-Solution Reflective (--use_feedback --use_process_feedback)
-```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback```
+### 3. Process-Level Feedback (`--use_feedback --use_process_feedback`)
+Includes detailed reasoning process in feedback generation.
 
-#### Strong-Model Reflective (--use_feedback --use_process_feedback --use_openai)
-```python openai_async_process.py --dataset gpqa  --agent_model meta-llama/Llama-3.3-70B-Instruct --base_url http://c007 --ports 1233 --write_file gpqa_log.jsonl --iterations 10 --proportion 1 --logprobs 1 --use_feedback --use_process_feedback --use_openai```
+### 4. Strong-Model Feedback (`--use_feedback --use_process_feedback --use_openai`)
+Uses OpenAI's models to generate high-quality feedback.
 
-We offer other functionalities such as --use_best_of_n which is the part of rejection sampling in our code. --in_temp which increases the temperature per iteration --binary_hint refers to provide models of its previous incorrect choices and ask it not to do that again --shuffle refers to shuffing the positions of answer choices in the question for MCQ questions 
+## Output Format
 
-To use the --use_openai you should fill in your openai api key in the AsyncOpenAI Client with your api key. 
+Results are saved as JSONL files with the following fields:
 
-Currently supporting datasets:
-mmlu, mmlu_pro, gpqa, math (refers to math-500), custom_simple (refers to 5 digits multiplication questions), hex (refers to 5 digits hexidecimal multiplication questions), aime_2024, trivia_qa, pop_qa. Note gsm8k and gsmsymbolic are not used anymore in our evaluation and are deprecated in the setting. 
+- **question**: Complete interaction history with original question
+- **normalized_answer**: Ground truth answer
+- **normalized_prediction**: Extracted model prediction  
+- **full_response**: Raw model response for current iteration
+- **feedback**: Generated feedback (if feedback is enabled)
+- **response_probs**: Average log probability per token
+- **is_correct**: Whether current iteration is correct
+- **iteration**: Current iteration number (starting from 0)
 
-Here is a brief summary of the functionalities of other files:
-manual_hints_5d.py: providing hints used for 5 digits multiplications
-start_multiple_server...sh: files for starting vllm server to host model on clusters
-check_dis_new.py: script for checking the "in-dsirtibutionness" of the model's output by generating 100 outputs per question
-error_analysis.py: script used for classifying whether model follows feedback based on openai model's judgement. Also need api key input.
+## File Structure
 
-## Supported Datasets
-mmlu, mmlu_pro
+- **`openai_async_process.py`**: Main experiment runner
+- **`utils.py`**: Core utilities and dataset handling
+- **`manual_hints_5d.py`**: Arithmetic problem hints and feedback
+- **`error_analysis.py`**: Feedback following analysis (requires OpenAI API)
+- **`check_dis_new.py`**: Output distribution analysis
+- **`start_multiple_server_*.sh`**: vLLM server startup scripts
 
-gpqa
+## Citation
 
-math (Math-500)
-
-custom_simple (5-digit decimal multiplication)
-
-hex (5-digit hexadecimal multiplication)
-
-aime_2024
-
-trivia_qa
-
-pop_qa
-
-**Deprecated**: gsm8k, gsm8k_symbolic
-
-## Output Data
-The output data are stored in jsonl files will record the iterative improvement process. For each dataset, the output files may differ in their field names, but basically, here are the content for each field:
-
-**question**: record the finished all rounds of answer + feedback histories with the original question in the front. 
-
-**normalized answer**: the ground truth answer for this question
-
-**normalized prediction**: the extracted prediction from the model's response
-
-**full response**: record the model's current round of response
-
-**feedback**: if use feedback, this record the feedback generated
-
-**response prob**: the average log probability per token of the model's current response
-
-**is_correct**: if the current iteration's answer is correct
-
-**iteration**: which iteration are we currently at, starting from iteration 0
-
-
-
-
+Please check out our paper for more implementation details and design choices.
