@@ -18,6 +18,7 @@ from utils import (
     call_openai_feedback,
     call_vllm_server,
     call_vllm_server_batched,
+    generate_best_of_n_response,
     generate_question,
     get_dataset_key,
     get_demonstrations,
@@ -103,63 +104,10 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         agent_response, agent_response_probs = await call_vllm_server(agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, type="answer", dataset=dataset, round=round, logprobs=logprobs)
         print("not using best of n temp: ", agent_temp)
     elif round != 0 and best_of_n:
-        best_of_n_num = 25 # default is 10
-        all_responses = []
-        all_response_probs = []
-        previous_choices = data['all_attempts']
-        print(f"\ncurrent temperature for round {round}: ", agent_temp)
-        # for beam_iter in range(1):
-        agent_responses = []
-        agent_responses_probs = []
-        for _ in range(25):
-            agent_response, agent_responses_prob = await call_vllm_server(
-                    agent_model=agent_model,
-                    new_messages=new_messages,
-                    temperature=agent_temp,
-                    tokenizer=tokenizer,
-                    base_url=base_url,
-                    ports=ports,
-                    type="answer",
-                    dataset=dataset,
-                    round=round,
-                    logprobs=logprobs,
-                    n=1
-            )
-            agent_responses.append(agent_response)
-            agent_responses_probs.append(agent_responses_prob)
-        current_response_predictions = get_normalized_predictions(dataset, agent_responses)
-        
-        # Find indices of new predictions
-        indices_not_in_list2 = [
-                i for i, x in enumerate(current_response_predictions) if x not in previous_choices
-            ]
-            
-         # if the new list is not empty
-        if indices_not_in_list2:
-            # randomly choose one of the new responses
-            chosen_index = random.choice(indices_not_in_list2)
-            
-            # we need to append the string not the list
-            agent_response = [agent_responses[chosen_index]][0]
-            # print("all responses for none repeatitive: ", agent_responses)
-            # print("chosen: ", agent_response)
-            agent_response_probs = [agent_responses_probs[chosen_index]][0]
-            print(f"\nsuccessfully found new solution different from before!")
-            # break  # exit the loop early
-        else:
-            # collect all responses and their probabilities
-            all_responses.extend(agent_responses)
-            all_response_probs.extend(agent_responses_probs)
-            # print("all responses for no changing: ", agent_responses)
-
-        # fallback if no novel response was found in any of the 10 iterations
-        # randomly choose one out of all_responses to proceed to the next round of feedback
-        # in revision, maybe choose the one with the least prob to go to the next round
-
-            fallback_index = random.randint(0, len(all_responses) - 1)
-            agent_response = [all_responses[fallback_index]][0]
-            agent_response_probs = [all_response_probs[fallback_index]][0]
-            print("\nfailed to generate novel response after 25 generations for the current question")
+        agent_response, agent_response_probs = await generate_best_of_n_response(
+            agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports,
+            dataset, round, logprobs, data
+        )
             
                 
     response_list = []

@@ -421,6 +421,69 @@ def shuffle_mcq_choices(dataset, item, letter_to_index):
     return updated_item
 
 
+async def generate_best_of_n_response(
+    agent_model, new_messages, agent_temp, n, tokenizer, base_url, ports, 
+    dataset, round, logprobs, data, num_generations=25
+):
+    """
+    Generate multiple responses and select one that hasn't been tried before.
+    Falls back to random selection if no novel responses found.
+    Returns: (selected_response, response_prob)
+    """
+    all_responses = []
+    all_response_probs = []
+    previous_choices = data.get('all_attempts', [])
+    
+    print(f"\ncurrent temperature for round {round}: ", agent_temp)
+    
+    # Generate multiple responses
+    agent_responses = []
+    agent_responses_probs = []
+    for _ in range(num_generations):
+        agent_response, agent_response_prob = await call_vllm_server(
+            agent_model=agent_model,
+            new_messages=new_messages,
+            temperature=agent_temp,
+            tokenizer=tokenizer,
+            base_url=base_url,
+            ports=ports,
+            type="answer",
+            dataset=dataset,
+            round=round,
+            logprobs=logprobs,
+            n=1
+        )
+        agent_responses.append(agent_response)
+        agent_responses_probs.append(agent_response_prob)
+    
+    # Get predictions for all responses
+    current_response_predictions = get_normalized_predictions(dataset, agent_responses)
+    
+    # Find indices of new predictions not in previous attempts
+    indices_not_in_list = [
+        i for i, x in enumerate(current_response_predictions) 
+        if x not in previous_choices
+    ]
+    
+    # If we found new responses, randomly choose one
+    if indices_not_in_list:
+        chosen_index = random.choice(indices_not_in_list)
+        agent_response = agent_responses[chosen_index]
+        agent_response_probs = agent_responses_probs[chosen_index]
+        print(f"\nsuccessfully found new solution different from before!")
+        return agent_response, agent_response_probs
+    else:
+        # Fallback: collect all responses and choose randomly
+        all_responses.extend(agent_responses)
+        all_response_probs.extend(agent_responses_probs)
+        
+        fallback_index = random.randint(0, len(all_responses) - 1)
+        agent_response = all_responses[fallback_index]
+        agent_response_probs = all_response_probs[fallback_index]
+        print("\nfailed to generate novel response after 25 generations for the current question")
+        return agent_response, agent_response_probs
+
+
 def get_url(base_url, ports):
     return random.choice(base_url) + ':' + str(random.choice(ports)) + '/v1/chat/completions'
 
@@ -1588,22 +1651,22 @@ def mask_answer_in_string_strict(input_string, ground_truth, dataset_name, data)
     
     return masked_string
 
-'''
+"""
 # TODO: newly added for multiplication questions
 def mask_answer_in_string_arith(input_string, ground_truth):
     ground_truth_str = str(ground_truth)
 
     # this will mask those with 1,000,000 "," between numbers
-    comma_formatted = re.sub(r"(\d)(?=(\d{3})+$)", r"\1,", ground_truth_str)
+    comma_formatted = re.sub(r"(\\d)(?=(\\d{3})+$)", r"\\1,", ground_truth_str)
 
     # ensure we only match the exact number with or without commas
-    pattern = rf'\b{re.escape(ground_truth_str)}\b|\b{re.escape(comma_formatted)}\b'
+    pattern = rf'\\b{re.escape(ground_truth_str)}\\b|\\b{re.escape(comma_formatted)}\\b'
 
     # replace occurrences with "<answer masked>"
     masked_string = re.sub(pattern, '<answer masked>', input_string)
 
     return masked_string
-'''
+"""
 
 def mask_answer_in_string_arith(input_string, ground_truth, intermediate_steps=None):
     """
