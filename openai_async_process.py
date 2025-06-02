@@ -14,15 +14,7 @@ from openai import AsyncOpenAI
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from manual_hints_5d import (
-    extract_numbers_and_process_5d, 
-    extract_numbers_and_process_6d, 
-    extract_numbers_and_process_4d, 
-    extract_numbers_and_process_7d, 
-    extract_numbers_and_process_8d, 
-    extract_numbers_and_process_9d,
-    provide_multiplication_hints
-)
+from manual_hints_5d import extract_numbers_and_process_5d
 from utils import (
     call_openai_feedback,
     call_vllm_server,
@@ -30,6 +22,7 @@ from utils import (
     generate_question,
     get_dataset_key,
     get_demonstrations,
+    get_feedback_messages,
     get_normalized_answer,
     get_normalized_prediction,
     get_normalized_predictions,
@@ -212,228 +205,11 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
         # empty or is incorrect
         if len(normalized_prediction_list) == 0 or not question_correct:
             
-            if (not use_process_feedback) and dataset != "custom_simple":
-                print("using answer feedbacks")
-                if round >= 1:
-                    start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
-                    history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
-                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                        feedback_messages = [{
-                            "role": "user",
-                            "content": (
-                                "There was a mistake in answering the following question:\n\n"
-                                + original_question_combined
-                                + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                                + "History:\n\n" 
-                                + history
-                                + "\n\nMost Recent Answer:\n" + response_list[0]
-                                + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                                + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                                + "WITHOUT revealing the correct final answer or the content of the correct option."
-                            )
-                            }
-                        ]
-                    else:
-                        feedback_messages = [
-                            {"role": "user", 
-                            "content": (
-                                    "There was a mistake in answering this question.\n\n"
-                                    + original_question_combined
-                                    + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                                    + "History:\n\n"
-                                    + history # extract this except the question for good formatting
-                                    + "\n\nMost Recent Answer: " + response_list[0]
-                                    + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                    # + "Please provide feedback identifying which step(s) were incorrect or how to improve the reasoning process, "
-                                    # + "WITHOUT revealing or referencing the correct final answer or the exact correct solution steps."
-                                    + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
-                                    )
-                            }
-                        ] 
-                    if shuffle: # for MCQ questions
-                        feedback_messages = [{
-                            "role": "user",
-                            "content": (
-                                "There was a mistake in answering the following question:\n\n"
-                                + original_question_combined
-                                + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                                + "\nNote that the options in previous questions might have been switched in each different attempt.\n"
-                                + "History:\n" 
-                                + history
-                                + "\n\nMost Recent Answer:\n" + response_list[0]
-                                + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                                + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                                + "WITHOUT revealing the correct final answer or the content of the correct option."
-                            )
-                        }]
-                        
-                else:# initial round, does not change with shuffle
-                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                        feedback_messages = [{
-                        "role": "user",
-                        "content": (
-                            "There was a mistake in answering the following question:\n\n"
-                            + original_question_combined
-                            + "\n\nMost Recent Answer:\n" + response_list[0]
-                            + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                            # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                            + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                            + "WITHOUT revealing the correct final answer or the content of the correct option."
-                        )
-                        }] 
-                    else:
-                        feedback_messages = [{
-                            "role": "user",
-                            "content": (
-                                "There was a mistake in answering the following question:\n\n"
-                                + original_question_combined
-                                + "\n\nMost Recent Answer:\n" + response_list[0]
-                                + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                                + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
-                            )
-                        }] 
-
-
-            elif dataset == "custom_simple": # feedback for arith questions
-                # TODO: for future, I can directly add the feedback for each question into the dataset instead of using the function here
-                fixed_feedback = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[0] 
-                intermediate_answers = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[1] 
-                if round >= 1:
-                    start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
-                    history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
-                    feedback_messages = [{
-                    "role": "user",
-                    "content": (
-                        "There was a mistake in answering the following question.\n\n"
-                            + original_question_combined
-                            + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                            + "History:\n\n"
-                            + history
-                            + "\nMost Recent Answer: " + response_list[0]
-                            + "\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                            + "The correct reasoning steps that lead to the answer are:\n" + fixed_feedback + "\n\n"
-                            + "Based on the correct reasoning process, please provide feedback identifying which step(s) in the previous answer were incorrect."
-                            )
-                    }]
-                else:
-                    feedback_messages = [{
-                    "role": "user",
-                    "content": (
-                        "There was a mistake in answering the following question.\n\n"
-                            + original_question_combined
-                            + "\n\nMost Recent Answer: " + response_list[0]
-                            + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                            + "The correct reasoning steps that lead to the answer are:\n" + fixed_feedback + "\n\n"
-                            + "Based on the correct reasoning process, please provide feedback identifying which step(s) in the previous answer were incorrect."
-                            )
-                    }]
-                
-            else: # process feedbacks
-                # also provide ground-truth answer trajectory
-                # print("using process feedbacks")
-                # this might be probelmatic  Question: " + data[get_dataset_key(dataset)] -> question field
-                # note, only gpqa has process feedback
-                if round >= 1:
-                    # extract the correct history without listing the question again
-                    start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
-                    history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
-                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                        feedback_messages = [
-                            {"role": "user", 
-                            "content": (
-                                    "There was a mistake in answering this question.\n\n"
-                                    + original_question_combined
-                                    + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                                    + "History:\n\n"
-                                    + history # extract this except the question for good formatting
-                                    + "\n\nMost Recent Answer: " + response_list[0]
-                                    + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                    + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
-                                    # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                                    + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                                    + "WITHOUT revealing the correct final answer or the content of the correct option."
-                                    )
-                            }
-                        ]
-                    else: # not MCQ questions
-                        feedback_messages = [
-                            {"role": "user", 
-                            "content": (
-                                    "There was a mistake in answering this question.\n\n"
-                                    + original_question_combined
-                                    + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                                    + "History:\n\n"
-                                    + history # extract this except the question for good formatting
-                                    + "\n\nMost Recent Answer: " + response_list[0]
-                                    + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                    + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
-                                    # + "\n\nIMPORTANT:\n"
-                                    # + "DO NOT state or indirectly reveal the correct final answer.\n"
-                                    # + "DO NOT quote or closely mimic the correct reasoning process.\n"
-                                    # + "Please provide feedback identifying which step(s) were incorrect or how to improve the reasoning process, "
-                                    # + "WITHOUT revealing or referencing the correct final answer or the exact correct solution steps."
-                                    + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
-                                    )
-                            }
-                        ]    
-                    if shuffle:
-                        # extract the correct history without listing the question again
-                        start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
-                        history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
-                        feedback_messages = [
-                        {"role": "user", 
-                        "content": (
-                                "There was a mistake in answering this question.\n\n"
-                                + original_question_combined
-                                + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
-                                + "\nNote that the options in previous questions might have been switched in each different attempt.\n"
-                                + "History:\n\n"
-                                + history # extract this except the question for good formatting
-                                + "\n\nMost Recent Answer: " + response_list[0]
-                                + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
-                                # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                                + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                                + "WITHOUT revealing the correct final answer or the content of the correct option."
-                                )
-                        }
-                        ]                        
-                else: # initial round no history exists
-                    print("using process feedback!")
-                    if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                        feedback_messages = [
-                        {"role": "user", 
-                        "content": (
-                                "There was a mistake in answering the this question.\n\n"
-                                + original_question_combined
-                                + "\n\nMost Recent Answer: " + response_list[0]
-                                + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
-                                # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                                + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
-                                + "WITHOUT revealing the correct final answer or the content of the correct option."
-                                )
-                        }
-                    ]      
-                    else:
-                        feedback_messages = [
-                            {"role": "user", 
-                            "content": (
-                                    "There was a mistake in answering the this question.\n\n"
-                                    + original_question_combined
-                                    + "\n\nMost Recent Answer: " + response_list[0]
-                                    + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
-                                    + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
-                                    # + "\nPlease provide feedback on which step is wrong or how to get to the correct answer without directly giving up the final correct answer or the content of the correct option: "
-                                    # + "Please provide feedback identifying which step(s) were incorrect or how to improve the reasoning process, "
-                                    # + "WITHOUT revealing or referencing the correct final answer or the exact correct solution steps."
-                                    + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
-                                    )
-                            }
-                        ]     
+            # Generate feedback messages based on dataset and configuration
+            feedback_messages = get_feedback_messages(
+                dataset, original_question_combined, response_list, data, 
+                round, use_process_feedback, shuffle
+            )     
             # print("feedback_message: ", feedback_messages)
             if openai_feedback:
                 print("Using OpenAI gpt-4o-mini model for feedback...")
@@ -452,10 +228,11 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                 feedback = (mask_answer_in_string_math(feedback[0], get_normalized_answer(dataset, data)), feedback[1]) # return prob also
 
             elif dataset == "custom_simple":
+                # Extract feedback and intermediate answers for masking
+                fixed_feedback = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[0] 
+                intermediate_answers = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[1]
                 # concat the feedback
-                feedback = (mask_answer_in_string_arith(fixed_feedback + " " + feedback[0], get_normalized_answer(dataset, data), intermediate_steps=intermediate_answers), feedback[1]) # direct musk
-                # feedback = (mask_hex_answers_in_feedback(feedback[0], get_normalized_answer(dataset, data)), feedback[1])
-                # print("masked feedback: \n", feedback[0])
+                feedback = (mask_answer_in_string_arith(fixed_feedback + " " + feedback[0], get_normalized_answer(dataset, data), intermediate_steps=intermediate_answers), feedback[1])
             
             elif dataset == "hex":
                 feedback = (mask_answer_in_string_hex(data['Explanation'] + " " + feedback[0], get_normalized_answer(dataset, data)), feedback[1])

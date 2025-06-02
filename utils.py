@@ -135,6 +135,206 @@ async def judge_pop_qa(question: str, prediction: str, possible_answers: list[st
     verdict = verdict.strip().upper()
     return "YES" in verdict, verdict
 
+def get_feedback_messages(dataset, original_question_combined, response_list, data, round, use_process_feedback, shuffle):
+    """
+    Generate feedback messages based on dataset type, round, and feedback configuration.
+    Returns list of messages to send to feedback generation model.
+    """
+    # Import here to avoid circular import
+    from manual_hints_5d import extract_numbers_and_process_5d
+    
+    if not use_process_feedback and dataset != "custom_simple":
+        # Answer feedback
+        if round >= 1:
+            start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
+            history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
+            
+            if shuffle:  # for MCQ questions
+                return [{
+                    "role": "user",
+                    "content": (
+                        "There was a mistake in answering the following question:\n\n"
+                        + original_question_combined
+                        + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
+                        + "\nNote that the options in previous questions might have been switched in each different attempt.\n"
+                        + "History:\n" 
+                        + history
+                        + "\n\nMost Recent Answer:\n" + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
+                        + "WITHOUT revealing the correct final answer or the content of the correct option."
+                    )
+                }]
+            
+            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
+                return [{
+                    "role": "user",
+                    "content": (
+                        "There was a mistake in answering the following question:\n\n"
+                        + original_question_combined
+                        + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
+                        + "History:\n\n" 
+                        + history
+                        + "\n\nMost Recent Answer:\n" + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
+                        + "WITHOUT revealing the correct final answer or the content of the correct option."
+                    )
+                }]
+            else:
+                return [{
+                    "role": "user", 
+                    "content": (
+                        "There was a mistake in answering this question.\n\n"
+                        + original_question_combined
+                        + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
+                        + "History:\n\n"
+                        + history
+                        + "\n\nMost Recent Answer: " + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
+                    )
+                }]
+        else:  # initial round
+            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
+                return [{
+                    "role": "user",
+                    "content": (
+                        "There was a mistake in answering the following question:\n\n"
+                        + original_question_combined
+                        + "\n\nMost Recent Answer:\n" + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
+                        + "WITHOUT revealing the correct final answer or the content of the correct option."
+                    )
+                }]
+            else:
+                return [{
+                    "role": "user",
+                    "content": (
+                        "There was a mistake in answering the following question:\n\n"
+                        + original_question_combined
+                        + "\n\nMost Recent Answer:\n" + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
+                    )
+                }]
+
+    elif dataset == "custom_simple":  # feedback for arith questions
+        fixed_feedback = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[0] 
+        
+        if round >= 1:
+            start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
+            history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
+            return [{
+                "role": "user",
+                "content": (
+                    "There was a mistake in answering the following question.\n\n"
+                    + original_question_combined
+                    + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
+                    + "History:\n\n"
+                    + history
+                    + "\nMost Recent Answer: " + response_list[0]
+                    + "\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                    + "The correct reasoning steps that lead to the answer are:\n" + fixed_feedback + "\n\n"
+                    + "Based on the correct reasoning process, please provide feedback identifying which step(s) in the previous answer were incorrect."
+                )
+            }]
+        else:
+            return [{
+                "role": "user",
+                "content": (
+                    "There was a mistake in answering the following question.\n\n"
+                    + original_question_combined
+                    + "\n\nMost Recent Answer: " + response_list[0]
+                    + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                    + "The correct reasoning steps that lead to the answer are:\n" + fixed_feedback + "\n\n"
+                    + "Based on the correct reasoning process, please provide feedback identifying which step(s) in the previous answer were incorrect."
+                )
+            }]
+    
+    else:  # process feedbacks
+        if round >= 1:
+            start_idx = data[get_dataset_key(dataset)].find("Attempt at (iteration")
+            history = data[get_dataset_key(dataset)][start_idx:] if start_idx != -1 else data[get_dataset_key(dataset)]
+            
+            if shuffle:
+                return [{
+                    "role": "user", 
+                    "content": (
+                        "There was a mistake in answering this question.\n\n"
+                        + original_question_combined
+                        + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
+                        + "\nNote that the options in previous questions might have been switched in each different attempt.\n"
+                        + "History:\n\n"
+                        + history
+                        + "\n\nMost Recent Answer: " + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
+                        + "WITHOUT revealing the correct final answer or the content of the correct option."
+                    )
+                }]
+            
+            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
+                return [{
+                    "role": "user", 
+                    "content": (
+                        "There was a mistake in answering this question.\n\n"
+                        + original_question_combined
+                        + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
+                        + "History:\n\n"
+                        + history
+                        + "\n\nMost Recent Answer: " + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
+                        + "WITHOUT revealing the correct final answer or the content of the correct option."
+                    )
+                }]
+            else:  # not MCQ questions
+                return [{
+                    "role": "user", 
+                    "content": (
+                        "There was a mistake in answering this question.\n\n"
+                        + original_question_combined
+                        + "\nYou are provided with the full history of previous attempts made by a separate model, along with corresponding feedback.\n"
+                        + "History:\n\n"
+                        + history
+                        + "\n\nMost Recent Answer: " + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
+                    )
+                }]
+        else:  # initial round no history exists
+            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
+                return [{
+                    "role": "user", 
+                    "content": (
+                        "There was a mistake in answering the this question.\n\n"
+                        + original_question_combined
+                        + "\n\nMost Recent Answer: " + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer "
+                        + "WITHOUT revealing the correct final answer or the content of the correct option."
+                    )
+                }]      
+            else:
+                return [{
+                    "role": "user", 
+                    "content": (
+                        "There was a mistake in answering the this question.\n\n"
+                        + original_question_combined
+                        + "\n\nMost Recent Answer: " + response_list[0]
+                        + "\n\nThe correct final answer is: " + get_normalized_answer(dataset, data)
+                        + "\nThe correct reasoning process that leads to this answer is: " + get_process_answer(dataset, data)
+                        + "\n\nPlease provide feedback identifying which step(s) were incorrect or how to get to the correct answer **WITHOUT PROVIDING THE CORRECT FINAL ANSWER**: "
+                    )
+                }]
+
+
 def get_url(base_url, ports):
     return random.choice(base_url) + ':' + str(random.choice(ports)) + '/v1/chat/completions'
 
