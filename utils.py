@@ -1,21 +1,35 @@
+import asyncio
+import json
+import os
+import random
 import re
 import string
-import random
-import datasets
-import asyncio
-import aiohttp
-import numpy as np
-import json
 from datetime import datetime
-from dataset_specific_utils import normalize_final_answer, remove_boxed, last_boxed_only_string, is_equiv, extract_and_convert_number_real, strip_string, normalize_answer, gsm8k_list_of_end_prompts, strip_string_mult
+
+import aiohttp
+import datasets
+import numpy as np
+from openai import AsyncOpenAI
+
+from dataset_specific_utils import (
+    extract_and_convert_number_real,
+    gsm8k_list_of_end_prompts,
+    is_equiv,
+    last_boxed_only_string,
+    normalize_answer,
+    normalize_final_answer,
+    remove_boxed,
+    strip_string,
+    strip_string_mult
+)
+
 random.seed(42)
 np.random.seed(42)
 MAX_CONCURRENT_REQUESTS = 1000  # Adjust if needed
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-from openai import AsyncOpenAI
 
 # create initials
-client = AsyncOpenAI(api_key="key")
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 dataset_files = {
         "custom_simple": "digits_buckets/multiplication_questions_6d.jsonl",
         "hex": "hex5d.jsonl"

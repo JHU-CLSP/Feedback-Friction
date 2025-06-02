@@ -1,11 +1,14 @@
-from openai import OpenAI
-from transformers import AutoTokenizer
-import json
-import time
-import numpy as np
 import asyncio
-from tqdm import tqdm
+import json
+import os
+import time
 from argparse import ArgumentParser
+
+import numpy as np
+from openai import OpenAI
+from tqdm import tqdm
+from transformers import AutoTokenizer
+
 from utils import call_vllm_server, generate_question, get_process_answer, get_dataset_key
 
 # vLLM server configuration
@@ -25,7 +28,7 @@ tag_map = {
 }
 
 # OpenAI reasoning client setup
-client = OpenAI(api_key="KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 async def call_openai_judge(messages):
     """Call the OpenAI reasoning-enabled model (o4-mini) to categorize errors using Responses API.

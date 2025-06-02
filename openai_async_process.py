@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import random
 import re
 import sys
@@ -46,7 +47,7 @@ from utils import (
 
 sys.setrecursionlimit(5000)
 
-client = AsyncOpenAI(api_key="KEY")
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 async def call_openai_feedback(messages, max_retries=1, wait_seconds=2):
     """
