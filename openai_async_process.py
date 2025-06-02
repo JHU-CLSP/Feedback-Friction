@@ -29,7 +29,8 @@ from utils import (
     get_process_answer,
     is_equivalent,
     mask_feedback_answers,
-    setup_datalist
+    setup_datalist,
+    shuffle_mcq_choices
 )
 
 sys.setrecursionlimit(5000)
@@ -292,38 +293,9 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
                                                         + f"\nHere is the feedback:\n{item['feedback'][0]}"
                                                         + "\nPlease answer the question again. "
                                                     )
-                        # if we need to shift the answer positions
-                        if shuffle: #sanity check
-                            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                                origin_ques = item['original_question']
-                                origin_ans = item['normalized_answer']
-                                pred_ans = item['normalized_prediction'][0] # this is a list
-                                if pred_ans != "X": # continue if the model has answered the question, otherwise we do not change
-                                    gt_index = letter_to_index[origin_ans]
-                                    other_index = letter_to_index[pred_ans] # get the pred index\
-                                    # we switch the option then reformat the question
-                                    new_ques = ""
-                                    if dataset != "mmlu": # mmlu pro and gpqa has this format
-                                        temp["options"][gt_index], temp["options"][other_index] = temp["options"][other_index], temp["options"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for op in range(len(temp['options'])):
-                                            new_ques += f"({chr(ord('A') + op)}) " + temp['options'][op] + "\n"
-                                    else: # mmlu uses choices instead
-                                        temp["choices"][gt_index], temp["choices"][other_index] = temp["choices"][other_index], temp["choices"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for ch in range(len(temp['choices'])):
-                                            new_ques += f"({chr(ord('A') + ch)}) " + temp['choices'][ch] + "\n"
-                                    # revise the question
-                                    temp[get_dataset_key(dataset)] = temp[get_dataset_key(dataset)] + "\nHere is the updated question: \nQuestion: \n" + new_ques
-                                    # at last, update the new final answer:
-                                    if dataset == "mmlu":
-                                        temp['answer'] = other_index # "b" -> "d" switch answer choice then we need to switch the ground truth to previous incorret pos
-                                    else:
-                                        temp['answer'] = pred_ans
-                                    # we should not update the normalized_answer field since it is for this iteration.
-                                    # answer updated since it is used for the next iteration
-                                else:
-                                    pass # we need to do nothing
+                        # Shuffle answer choices if enabled
+                        if shuffle:
+                            temp = shuffle_mcq_choices(dataset, temp, letter_to_index)
                     else:
                         temp[get_dataset_key(dataset)] = (item[get_dataset_key(dataset)]
                                                         + f"\n\nAttempt at (iteration {iters+1}) and the corresponding feedback:\n"
@@ -332,37 +304,8 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
                                                         + f"\nHere is the feedback:\n{item['feedback'][0]}"
                                                         + "\nPlease answer the question again. "
                                                     )     
-                        if shuffle: #sanity check
-                            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                                origin_ques = item['original_question']
-                                origin_ans = item['normalized_answer']
-                                pred_ans = item['normalized_prediction'][0] # this is a list
-                                if pred_ans != "X": # continue if the model has answered the question, otherwise we do not change
-                                    gt_index = letter_to_index[origin_ans]
-                                    other_index = letter_to_index[pred_ans] # get the pred index\
-                                    # we switch the option then reformat the question
-                                    new_ques = ""
-                                    if dataset != "mmlu": # mmlu pro and gpqa has this format
-                                        temp["options"][gt_index], temp["options"][other_index] = temp["options"][other_index], temp["options"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for op in range(len(temp['options'])):
-                                            new_ques += f"({chr(ord('A') + op)}) " + temp['options'][op] + "\n"
-                                    else: # mmlu uses choices instead
-                                        temp["choices"][gt_index], temp["choices"][other_index] = temp["choices"][other_index], temp["choices"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for ch in range(len(temp['choices'])):
-                                            new_ques += f"({chr(ord('A') + ch)}) " + temp['choices'][ch] + "\n"
-                                    # revise the question
-                                    temp[get_dataset_key(dataset)] = temp[get_dataset_key(dataset)] + "\nHere is the updated question: \nQuestion: \n" + new_ques
-                                    # at last, update the new final answer:
-                                    if dataset == "mmlu":
-                                        temp['answer'] = other_index # "b" -> "d" switch answer choice then we need to switch the ground truth to previous incorret pos
-                                    else:
-                                        temp['answer'] = pred_ans
-                                    # we should not update the normalized_answer field since it is for this iteration.
-                                    # answer updated since it is used for the next iteration
-                                else:
-                                    pass # we need to do nothing                 
+                        if shuffle:
+                            temp = shuffle_mcq_choices(dataset, temp, letter_to_index)                 
                 else: # binary feedback
                     if iters < 1:
                         temp[get_dataset_key(dataset)] = (item[get_dataset_key(dataset)] + 
@@ -372,80 +315,18 @@ def apply_async(data_list, agent_model, dataset, tokenizer, temperature, n):
                                                         + f"\nAnswer:\n{item['full_response'][0]}\n\n"
                                                         + "Feedback: Your answer was incorrect. Please answer the question again\n"
                                                     )
-                        # since we are incorrect, we can directly add this feedback
-                        if shuffle and (not use_feedback) and (not use_process_feedback): #sanity check
-                            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                                origin_ques = item['original_question']
-                                origin_ans = item['normalized_answer']
-                                pred_ans = item['normalized_prediction'][0] # this is a list
-                                # print("origin_ans:", origin_ans)
-                                # print("pred_ans: ", pred_ans)
-                                if pred_ans != "X": # continue if the model has answered the question, otherwise we do not change
-                                    gt_index = letter_to_index[origin_ans]
-                                    other_index = letter_to_index[pred_ans] # get the pred index\
-                                    # we switch the option then reformat the question
-                                    new_ques = ""
-                                    if dataset != "mmlu": # mmlu pro and gpqa has this format
-                                        temp["options"][gt_index], temp["options"][other_index] = temp["options"][other_index], temp["options"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for op in range(len(temp['options'])):
-                                            new_ques += f"({chr(ord('A') + op)}) " + temp['options'][op] + "\n"
-                                    else: # mmlu uses choices instead
-                                        temp["choices"][gt_index], temp["choices"][other_index] = temp["choices"][other_index], temp["choices"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for ch in range(len(temp['choices'])):
-                                            new_ques += f"({chr(ord('A') + ch)}) " + temp['choices'][ch] + "\n"
-                                    # revise the question
-                                    temp[get_dataset_key(dataset)] = temp[get_dataset_key(dataset)] + "\nHere is the updated question: \nQuestion: \n" + new_ques
-                                    # at last, update the new final answer:
-                                    if dataset == "mmlu" or dataset == "gpqa":
-                                        temp['answer'] = other_index # "b" -> "d" switch answer choice then we need to switch the ground truth to previous incorret pos
-                                    else:
-                                        temp['answer'] = pred_ans
-                                    # we should not update the normalized_answer field since it is for this iteration.
-                                    # answer updated since it is used for the next iteration
-                                else:
-                                    pass # we need to do nothing
+                        # Shuffle answer choices if enabled for binary feedback
+                        if shuffle and (not use_feedback) and (not use_process_feedback):
+                            temp = shuffle_mcq_choices(dataset, temp, letter_to_index)
                     else: # for iterations after the 1st
                         temp[get_dataset_key(dataset)] = (item[get_dataset_key(dataset)] + 
                                                           f"\nAttempt at (iteration {iters+1}) and the corresponding feedback:\n"
                                                         + f"\nAnswer:\n{item['full_response'][0]}\n\n"
                                                         + "Feedback: Your answer was incorrect. Please answer the question again.\n" #  considering all feedbacks provided
                                                     )
-                        # since we are incorrect, we can directly add this feedback
-                        if shuffle and (not use_feedback) and (not use_process_feedback): #sanity check
-                            if dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                                origin_ques = item['original_question']
-                                origin_ans = item['normalized_answer']
-                                pred_ans = item['normalized_prediction'][0] # this is a list
-                                # print("origin_ans:", origin_ans)
-                                # print("pred_ans: ", pred_ans)
-                                if pred_ans != "X": # continue if the model has answered the question, otherwise we do not change
-                                    gt_index = letter_to_index[origin_ans]
-                                    other_index = letter_to_index[pred_ans] # get the pred index\
-                                    # we switch the option then reformat the question
-                                    new_ques = ""
-                                    if dataset != "mmlu": # mmlu pro and gpqa has this format
-                                        temp["options"][gt_index], temp["options"][other_index] = temp["options"][other_index], temp["options"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for op in range(len(temp['options'])):
-                                            new_ques += f"({chr(ord('A') + op)}) " + temp['options'][op] + "\n"
-                                    else: # mmlu uses choices instead
-                                        temp["choices"][gt_index], temp["choices"][other_index] = temp["choices"][other_index], temp["choices"][gt_index]
-                                        new_ques = origin_ques.split("Choices: ", 1)[0] + "\nChoices:\n"
-                                        for ch in range(len(temp['choices'])):
-                                            new_ques += f"({chr(ord('A') + ch)}) " + temp['choices'][ch] + "\n"
-                                    # revise the question
-                                    temp[get_dataset_key(dataset)] = temp[get_dataset_key(dataset)] + "\nHere is the updated question: \nQuestion: \n" + new_ques
-                                    # at last, update the new final answer:
-                                    if dataset == "mmlu" or dataset == "gpqa":
-                                        temp['answer'] = other_index # "b" -> "d" switch answer choice then we need to switch the ground truth to previous incorret pos
-                                    else:
-                                        temp['answer'] = pred_ans
-                                    # we should not update the normalized_answer field since it is for this iteration.
-                                    # answer updated since it is used for the next iteration
-                                else:
-                                    pass # we need to do nothing
+                        # Shuffle answer choices if enabled for binary feedback
+                        if shuffle and (not use_feedback) and (not use_process_feedback):
+                            temp = shuffle_mcq_choices(dataset, temp, letter_to_index)
 
                 data_list_temp.append(temp)
                 # f_iter.write(json.dumps(temp) + "\n")  # log incorrect sample immediately

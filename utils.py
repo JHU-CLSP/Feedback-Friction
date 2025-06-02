@@ -371,6 +371,56 @@ def mask_feedback_answers(dataset, feedback, data):
     return feedback
 
 
+def shuffle_mcq_choices(dataset, item, letter_to_index):
+    """
+    Shuffle MCQ answer choices by swapping ground truth and predicted answer positions.
+    Updates the question text and ground truth accordingly.
+    Returns: Updated item with shuffled choices and modified question text.
+    """
+    if dataset not in ["mmlu", "mmlu_pro", "gpqa"]:
+        return item
+    
+    origin_ques = item['original_question']
+    origin_ans = item['normalized_answer']
+    pred_ans = item['normalized_prediction'][0] if item['normalized_prediction'] else "X"
+    
+    # Skip if model didn't provide an answer
+    if pred_ans == "X":
+        return item
+    
+    gt_index = letter_to_index[origin_ans]
+    other_index = letter_to_index[pred_ans]
+    
+    # Create a copy to avoid modifying original
+    updated_item = item.copy()
+    
+    # Swap the options
+    if dataset != "mmlu":  # mmlu_pro and gpqa use 'options'
+        choices_key = 'options'
+    else:  # mmlu uses 'choices'
+        choices_key = 'choices'
+    
+    # Make a copy of choices and swap
+    choices = updated_item[choices_key].copy()
+    choices[gt_index], choices[other_index] = choices[other_index], choices[gt_index]
+    updated_item[choices_key] = choices
+    
+    # Reformat the question with new choice order
+    question_base = origin_ques.split("Choices: ", 1)[0]
+    new_ques = question_base + "\nChoices:\n"
+    for i, choice in enumerate(choices):
+        new_ques += f"({chr(ord('A') + i)}) {choice}\n"
+    
+    # Update the question in the dataset key
+    dataset_key = get_dataset_key(dataset)
+    updated_item[dataset_key] = updated_item[dataset_key] + f"\nHere is the updated question: \nQuestion: \n{new_ques}"
+    
+    # Update the ground truth to point to the new position
+    updated_item['answer'] = other_index
+    
+    return updated_item
+
+
 def get_url(base_url, ports):
     return random.choice(base_url) + ':' + str(random.choice(ports)) + '/v1/chat/completions'
 
