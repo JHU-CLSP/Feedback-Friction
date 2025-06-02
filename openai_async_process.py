@@ -24,6 +24,7 @@ from manual_hints_5d import (
     provide_multiplication_hints
 )
 from utils import (
+    call_openai_feedback,
     call_vllm_server,
     call_vllm_server_batched,
     call_vllm_server_reasoner,
@@ -46,46 +47,6 @@ from utils import (
 )
 
 sys.setrecursionlimit(5000)
-
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-async def call_openai_feedback(messages, max_retries=1, wait_seconds=2):
-    """
-    Call the OpenAI o4-mini reasoning model via the Responses API for feedback generation.
-    Includes retry logic with a fixed wait time between attempts.
-    Returns: (text, summary, usage)
-    """
-    for attempt in range(max_retries):
-        try:
-            response = await client.responses.create(
-                model="gpt-4.1-mini",
-                input=messages,
-                max_output_tokens=5000
-            )
-
-            # Extract text
-            if response.status == "incomplete" and getattr(response, 'incomplete_details', None) and response.incomplete_details.reason == "max_output_tokens":
-                text = response.output_text or ""
-            else:
-                text = response.output_text
-
-            # Extract summary
-            summary = None
-            if hasattr(response, 'reasoning') and response.reasoning.effort is not None:
-                summary = '\n'.join([item.text for item in response.output[0].summary])
-
-            # Extract and serialize usage
-            raw_usage = getattr(response, 'usage', None)
-            usage = raw_usage.dict() if raw_usage and hasattr(raw_usage, 'dict') else raw_usage
-
-            return text.strip(), summary, usage
-
-        except Exception as e:
-            if attempt < max_retries - 1:
-                print(f"[o4-mini retry {attempt + 1}] Error: {e}, retrying in {wait_seconds}s...")
-                await asyncio.sleep(wait_seconds)
-            else:
-                return f"OpenAI API Error after {max_retries} attempts: {e}", None, {}
 
 base_url = ['http://c004']
 ports = [1233, 1234, 1235, 1236]
