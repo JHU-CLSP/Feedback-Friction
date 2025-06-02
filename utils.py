@@ -335,6 +335,42 @@ def get_feedback_messages(dataset, original_question_combined, response_list, da
                 }]
 
 
+def mask_feedback_answers(dataset, feedback, data):
+    """
+    Apply dataset-specific answer masking to feedback text.
+    Returns: (masked_feedback_text, feedback_probs)
+    """
+    feedback_text, feedback_probs = feedback
+    
+    if dataset == "math" or dataset == "aime_2024":
+        return (mask_answer_in_string_math(feedback_text, get_normalized_answer(dataset, data)), feedback_probs)
+    
+    elif dataset == "custom_simple":
+        # Import here to avoid circular import
+        from manual_hints_5d import extract_numbers_and_process_5d
+        
+        # Extract feedback and intermediate answers for masking
+        fixed_feedback = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[0] 
+        intermediate_answers = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[1]
+        # concat the feedback
+        return (mask_answer_in_string_arith(fixed_feedback + " " + feedback_text, get_normalized_answer(dataset, data), intermediate_steps=intermediate_answers), feedback_probs)
+    
+    elif dataset == "hex":
+        return (mask_answer_in_string_hex(data['Explanation'] + " " + feedback_text, get_normalized_answer(dataset, data)), feedback_probs)
+        
+    elif dataset == "trivia_qa":
+        return (mask_answers_in_trivia_qa(feedback_text, data), feedback_probs)
+        
+    elif dataset == "pop_qa":
+        return (mask_answers_in_pop_qa(feedback_text, data), feedback_probs)
+
+    elif dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
+        return (mask_answer_in_string_mcq_case_sensitive(feedback_text, get_normalized_answer(dataset, data)), feedback_probs)
+    
+    # Default: return feedback unchanged
+    return feedback
+
+
 def get_url(base_url, ports):
     return random.choice(base_url) + ':' + str(random.choice(ports)) + '/v1/chat/completions'
 

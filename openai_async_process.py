@@ -14,7 +14,6 @@ from openai import AsyncOpenAI
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from manual_hints_5d import extract_numbers_and_process_5d
 from utils import (
     call_openai_feedback,
     call_vllm_server,
@@ -29,12 +28,7 @@ from utils import (
     get_previous,
     get_process_answer,
     is_equivalent,
-    mask_answer_in_string_arith,
-    mask_answer_in_string_hex,
-    mask_answer_in_string_math,
-    mask_answer_in_string_mcq_case_sensitive,
-    mask_answers_in_pop_qa,
-    mask_answers_in_trivia_qa,
+    mask_feedback_answers,
     setup_datalist
 )
 
@@ -223,28 +217,8 @@ async def get_response(data, pbar: tqdm, agent_model: str, dataset: str, tokeniz
                 print("Normal Model!")
                 feedback = await call_vllm_server(agent_model, feedback_messages, temperature, n, tokenizer, base_url, ports, type="feedback", dataset=dataset, round=round)
 
-            if dataset == "math" or dataset == "aime_2024":
-
-                feedback = (mask_answer_in_string_math(feedback[0], get_normalized_answer(dataset, data)), feedback[1]) # return prob also
-
-            elif dataset == "custom_simple":
-                # Extract feedback and intermediate answers for masking
-                fixed_feedback = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[0] 
-                intermediate_answers = extract_numbers_and_process_5d(str(data[get_dataset_key(dataset)]))[1]
-                # concat the feedback
-                feedback = (mask_answer_in_string_arith(fixed_feedback + " " + feedback[0], get_normalized_answer(dataset, data), intermediate_steps=intermediate_answers), feedback[1])
-            
-            elif dataset == "hex":
-                feedback = (mask_answer_in_string_hex(data['Explanation'] + " " + feedback[0], get_normalized_answer(dataset, data)), feedback[1])
-                
-            elif dataset == "trivia_qa":
-                feedback = (mask_answers_in_trivia_qa(feedback[0], data), feedback[1])
-                
-            elif dataset == "pop_qa":
-                feedback = (mask_answers_in_pop_qa(feedback[0], data), feedback[1])
-
-            elif dataset == "mmlu" or dataset == "mmlu_pro" or dataset == "gpqa":
-                feedback = (mask_answer_in_string_mcq_case_sensitive(feedback[0], get_normalized_answer(dataset, data)), feedback[1]) # return prob also
+            # Apply dataset-specific answer masking
+            feedback = mask_feedback_answers(dataset, feedback, data)
             
     dataset_key = get_dataset_key(dataset) # use this to ensure consistency
     d = {
