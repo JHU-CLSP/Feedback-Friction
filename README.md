@@ -164,12 +164,46 @@ Results are saved as JSONL files with the following fields:
 
 ## File Structure
 
-- **`openai_async_process.py`**: Main experiment runner
+- **`openai_async_process.py`**: Main experiment runner with multiple sampling and best-of-n logic
 - **`utils.py`**: Core utilities and dataset handling
-- **`manual_hints_5d.py`**: Arithmetic problem hints and feedback
-- **`error_analysis.py`**: Feedback following analysis (requires OpenAI API)
-- **`check_dis_new.py`**: Output distribution analysis
-- **`start_multiple_server_*.sh`**: vLLM server startup scripts
+- **`error_analysis.py`**: Feedback-based iterative improvement system (requires OpenAI API)
+- **`oracle_beam_search.py`**: Oracle upper bound evaluation via large beam search sampling
+- **`digit_multiplication/`**: Specialized digit multiplication modules
+  - **`decimal.py`**: 5-6 digit decimal multiplication with step-by-step distributive property hints
+  - **`hexadecimal.py`**: 5-6 digit hexadecimal multiplication with base-16 step-by-step explanations
+- **`start_server.sh`**: Unified vLLM server startup script for both 70B and 405B models
+
+## Oracle Beam Search Evaluation
+
+The `oracle_beam_search.py` script provides an upper bound performance estimate by generating many responses per question and checking if any are correct. This helps evaluate the theoretical maximum accuracy achievable with larger beam sizes.
+
+**Usage:**
+```bash
+python oracle_beam_search.py \
+    --dataset math \
+    --agent_model meta-llama/Llama-3.1-70B-Instruct \
+    --attempts 10 \
+    --gens 10 \
+    --write_file oracle_results.jsonl
+```
+
+This generates `attempts × gens` total responses per question (100 in the example) and reports the percentage that contain at least one correct answer.
+
+## Digit Multiplication Datasets
+
+The framework includes specialized datasets for testing arithmetic reasoning:
+
+### Decimal Multiplication (`custom_simple`)
+- **Purpose**: Test systematic arithmetic reasoning with 5-6 digit numbers
+- **Method**: Uses distributive property breakdown (e.g., 12345 = 12000 + 345)
+- **Hints**: Step-by-step partial product computation and summation
+
+### Hexadecimal Multiplication (`hex`) 
+- **Purpose**: Test base-16 arithmetic reasoning with numbers that look decimal but are interpreted in hex
+- **Method**: Digit-by-digit multiplication in base 16 with proper carry handling
+- **Verification**: Automatically validates against built-in hex arithmetic
+
+Both datasets help evaluate whether models can follow systematic computational procedures rather than relying on memorized arithmetic facts.
 
 ## Citation
 
