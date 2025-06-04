@@ -1,12 +1,12 @@
+"""Hexadecimal multiplication for 5-digit and 6-digit numbers."""
+
 import json
 import re
 import random
 
 
 def add_hex(a: str, b: str) -> str:
-    """
-    Add two hexadecimal numbers (given as strings) digit by digit in base 16.
-    """
+    """Add two hexadecimal numbers (given as strings) digit by digit in base 16."""
     if len(b) > len(a):
         a, b = b, a
     a_rev, b_rev = a[::-1], b[::-1]
@@ -24,9 +24,7 @@ def add_hex(a: str, b: str) -> str:
 
 
 def multiply_hex_digit(hex_num: str, d: str) -> str:
-    """
-    Multiply a hexadecimal number (hex_num) by a single hex digit d.
-    """
+    """Multiply a hexadecimal number (hex_num) by a single hex digit d."""
     rev = hex_num[::-1]
     carry = 0
     result_digits = []
@@ -86,9 +84,7 @@ def generate_hex_questions(output_file: str, num_questions: int = 1000, digit_le
 
 
 def process_jsonl(input_file: str, output_file: str):
-    """
-    Read questions from a JSONL, compute hex products, and write detailed explanations.
-    """
+    """Read questions from a JSONL, compute hex products, and write detailed explanations."""
     with open(input_file, "r") as infile, open(output_file, "w") as outfile:
         for line in infile:
             data = json.loads(line)
@@ -113,12 +109,3 @@ def process_jsonl(input_file: str, output_file: str):
                 "Verification": verification
             }
             outfile.write(json.dumps(output_record) + "\n")
-
-
-if __name__ == "__main__":
-    # Generate and process 5-digit hex questions
-    input_file = "hex_questions_5d.jsonl"
-    generate_hex_questions(input_file, num_questions=1000, digit_length=5)
-    output_file = "hex5d.jsonl"
-    process_jsonl(input_file, output_file)
-    print(f"Generated and processed 5-digit hex questions → {output_file}")
