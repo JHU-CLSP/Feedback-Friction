@@ -31,8 +31,8 @@ semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 # create initials
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 dataset_files = {
-        "custom_simple": "digits_buckets/multiplication_questions_6d.jsonl",
-        "hex": "hex5d.jsonl"
+        "custom_simple": "Your file directory for the multiplication task.",
+        "hex": "Your file directory for the hexadecimal multiplication task."
 }
 
 async def call_openai_judge(messages, max_retries=1, wait_seconds=2):
