@@ -209,4 +209,12 @@ Both datasets help evaluate whether models can follow systematic computational p
 
 ## Citation
 
-Please check out our paper for more implementation details and design choices.
+If you use this repo, please cite the original paper:
+
+```bibtex
+@article{feedback_friction_2025,
+  title={FEEDBACK FRICTION: LLMs Struggle to Fully Incorporate External Feedback},
+  author={Dongwei Jiang and Alvin Zhang and Andrew Wang and Nicholas Andrews and Daniel Khashabi},
+  journal={arXiv preprint arXiv:2506.11930},
+  year={2025}
+}
