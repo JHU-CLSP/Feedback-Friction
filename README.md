@@ -1,4 +1,4 @@
-# RIGID THINKING: LLMs Struggle to Fully Incorporate External Feedback
+# FEEDBACK FRICTION: LLMs Struggle to Fully Incorporate External Feedback
 
 A research framework for evaluating how large language models incorporate different styles of feedback across multiple reasoning domains.
 
